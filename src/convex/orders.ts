@@ -4,12 +4,6 @@ import { mutation, query } from "./_generated/server";
 import { getCurrentUser, isAdminUser } from "./users";
 import { ORDER_STATUSES, type OrderStatus } from "./schema";
 
-/**
- * Orders module.
- * - Agents can list their own orders; admins can list all orders.
- * - Anyone signed in can create orders.
- */
-
 const generateOrderNumber = () => {
   const now = new Date();
   const y = now.getFullYear().toString().slice(-2);
@@ -28,38 +22,23 @@ export const list = query({
   handler: async (ctx, { status, search, paginationOpts }) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
-
     const admin = await isAdminUser(user);
 
     let results;
-    if (admin) {
-      // Admins see all orders
-      if (status && ORDER_STATUSES.includes(status as OrderStatus)) {
-        results = await ctx.db
-          .query("orders")
-          .withIndex("by_status", (q) => q.eq("status", status as OrderStatus))
-          .order("desc")
-          .paginate(paginationOpts);
-      } else {
-        results = await ctx.db
-          .query("orders")
-          .order("desc")
-          .paginate(paginationOpts);
-      }
+    if (status && ORDER_STATUSES.includes(status as OrderStatus)) {
+      results = await ctx.db
+        .query("orders")
+        .withIndex("by_status", (q) => q.eq("status", status as OrderStatus))
+        .order("desc")
+        .paginate(paginationOpts);
     } else {
-      // Agents see only their own orders
-      if (status && ORDER_STATUSES.includes(status as OrderStatus)) {
-        results = await ctx.db
-          .query("orders")
-          .withIndex("by_status", (q) => q.eq("status", status as OrderStatus))
-          .order("desc")
-          .paginate(paginationOpts);
-      } else {
-        results = await ctx.db
-          .query("orders")
-          .order("desc")
-          .paginate(paginationOpts);
-      }
+      results = await ctx.db
+        .query("orders")
+        .order("desc")
+        .paginate(paginationOpts);
+    }
+
+    if (!admin) {
       results = {
         ...results,
         page: results.page.filter((o) => o.createdBy === user._id),
@@ -70,8 +49,9 @@ export const list = query({
       ? results.page.filter((o) => {
           const s = search.toLowerCase();
           return (
-            o.full_name.toLowerCase().includes(s) ||
-            o.phone_number.toLowerCase().includes(s) ||
+            o.first_name.toLowerCase().includes(s) ||
+            (o.last_name?.toLowerCase().includes(s) ?? false) ||
+            o.phone.toLowerCase().includes(s) ||
             o.city.toLowerCase().includes(s) ||
             o.orderNumber.toLowerCase().includes(s)
           );
@@ -99,14 +79,23 @@ export const get = query({
 
 export const create = mutation({
   args: {
-    full_name: v.string(),
-    phone_number: v.string(),
+    first_name: v.string(),
+    last_name: v.optional(v.string()),
+    phone: v.string(),
+    instagram: v.optional(v.string()),
+    postalProvider: v.optional(v.string()),
+    country: v.string(),
     city: v.string(),
     address: v.string(),
-    product_notes: v.string(),
-    total_amount: v.number(),
-    parsedBy: v.optional(v.string()),
-    rawResponse: v.optional(v.string()),
+    addressDetails: v.optional(v.string()),
+    productDescription: v.string(),
+    productPrice: v.number(),
+    postalFee: v.optional(v.number()),
+    totalAmount: v.number(),
+    deliveryOpen: v.optional(v.boolean()),
+    deliveryExchange: v.optional(v.boolean()),
+    source: v.optional(v.string()),
+    trackingBarcode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -115,9 +104,19 @@ export const create = mutation({
     const id = await ctx.db.insert("orders", {
       ...args,
       orderNumber: generateOrderNumber(),
-      status: "new",
+      status: "pending",
       createdBy: user._id,
+      postalProvider: args.postalProvider ?? "Cheetah",
     });
+
+    await ctx.db.insert("audit_logs", {
+      action: "order.created",
+      details: `Porosi e re ${args.first_name} ${args.phone} — €${args.totalAmount}`,
+      userId: user._id,
+      entityType: "order",
+      entityId: id,
+    });
+
     return id;
   },
 });
@@ -155,7 +154,6 @@ export const remove = mutation({
   },
 });
 
-// Stats for dashboard
 export const stats = query({
   args: {},
   handler: async (ctx) => {
@@ -173,7 +171,7 @@ export const stats = query({
 
     const revenue = active
       .filter((o) => o.status === "delivered")
-      .reduce((sum, o) => sum + (o.total_amount ?? 0), 0);
+      .reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
 
     return {
       total: active.length,
@@ -186,7 +184,6 @@ export const stats = query({
   },
 });
 
-// Mark order as synced with courier (called after courier API call)
 export const markCourierSynced = mutation({
   args: { id: v.id("orders"), shipmentId: v.optional(v.string()), error: v.optional(v.string()) },
   handler: async (ctx, { id, shipmentId, error }) => {
@@ -199,5 +196,21 @@ export const markCourierSynced = mutation({
       courierSyncedAt: Date.now(),
       courierSyncError: error,
     });
+  },
+});
+
+// Recent orders for dashboard widget
+export const recent = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return [];
+    const admin = await isAdminUser(user);
+    const orders = await ctx.db
+      .query("orders")
+      .order("desc")
+      .take(limit ?? 5);
+    if (admin) return orders;
+    return orders.filter((o) => o.createdBy === user._id);
   },
 });
