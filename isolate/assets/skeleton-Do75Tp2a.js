@@ -1,1 +1,0 @@
-import{j as o}from"./framer-motion-CRk4231t.js";import{e as s}from"./card-CDGRkJ6j.js";function r({className:e,...t}){return o.jsx("div",{"data-slot":"skeleton",className:s("bg-accent animate-pulse rounded-md",e),...t})}export{r as S};
