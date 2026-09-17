@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Bot,
   ChevronLeft,
@@ -51,6 +51,42 @@ export default function Orders() {
 
   const updateStatus = useMutation(api.orders.updateStatus);
   const removeOrder = useMutation(api.orders.remove);
+  const cheetahConfig = useQuery(api.cheetah.getConfig, {});
+  const dispatchOrder = useAction(api.cheetah.dispatchOrder);
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncCourier = async () => {
+    if (!orders?.page.length) {
+      toast.error("Nuk ka porosi për të sinkronizuari.");
+      return;
+    }
+    if (!cheetahConfig?.hasCredentials) {
+      toast.error("Kredencialet e Postës Cheetah nuk janë konfiguruar (Settings → Konfigurimi i Postës).");
+      return;
+    }
+    setSyncing(true);
+    // Sync all visible orders that don't have a barcode yet.
+    const pending = orders.page.filter((o) => !o.trackingBarcode && !o.courierShipmentId);
+    if (pending.length === 0) {
+      toast.info("Të gjitha porositë e dukshme janë tashmë të sinkronizuara.");
+      setSyncing(false);
+      return;
+    }
+    let ok = 0;
+    let failed = 0;
+    for (const order of pending) {
+      try {
+        const result = await dispatchOrder({ orderId: order._id });
+        if (result.ok) ok += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setSyncing(false);
+    if (ok > 0) toast.success(`${ok} porosi u sinkronizuan me postën.`);
+    if (failed > 0) toast.warning(`${failed} dështuan — kontrolloni Audit Trail për detaje.`);
+  };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
@@ -84,12 +120,21 @@ export default function Orders() {
             <p className="mt-1 text-sm text-muted-foreground">Menaxhoni të gjitha porositë në një vend.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setSearchInput("")}>
               <Search className="mr-1.5 size-3.5" />
               Gjurmo
             </Button>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="mr-1.5 size-3.5" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncCourier}
+              disabled={syncing}
+            >
+              {syncing ? (
+                <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1.5 size-3.5" />
+              )}
               Sinkronizo me Postën
             </Button>
             <Button asChild size="sm">
@@ -169,10 +214,18 @@ export default function Orders() {
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs">{o.orderNumber}</span>
+                          {o.trackingBarcode && (
+                            <span className="font-mono text-[10px] text-muted-foreground">{o.trackingBarcode}</span>
+                          )}
                           <button
-                            onClick={() => copyBarcode(o.trackingBarcode ?? o.orderNumber)}
-                            className="text-muted-foreground hover:text-foreground"
-                            title="Kopjo barcode"
+                            onClick={() => {
+                              // Single-click copy: barcode if dispatched, else order number.
+                              const value = o.trackingBarcode ?? o.orderNumber;
+                              navigator.clipboard.writeText(value);
+                              toast.success(`U kopjua: ${value}`);
+                            }}
+                            className="text-muted-foreground transition-colors hover:text-foreground"
+                            title={o.trackingBarcode ? "Kopjo barcode" : "Kopjo nr. porosise"}
                           >
                             <Copy className="size-3" />
                           </button>

@@ -23,7 +23,7 @@ const NAV = [
   { to: "/catalog", label: "Katalogu", icon: Package, adminOnly: false },
   { to: "/orders/new", label: "Porosi e Re", icon: Sparkles, adminOnly: false },
   { to: "/orders", label: "Porositë", icon: ClipboardList, adminOnly: false },
-  { to: "/settings", label: "Më shumë", icon: Ellipsis, adminOnly: false },
+  { to: "/more", label: "Më shumë", icon: Ellipsis, adminOnly: false },
 ];
 
 const MORE_NAV = [
@@ -48,6 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isActive = (to: string) => {
     if (to === "/admin") return location.pathname.startsWith("/admin");
+    if (to === "/more") return location.pathname.startsWith("/more");
     if (to === "/orders/new") return location.pathname === "/orders/new";
     if (to === "/catalog") {
       return location.pathname.startsWith("/catalog");
