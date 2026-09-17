@@ -173,6 +173,13 @@ export const stats = query({
       .filter((o) => o.status === "delivered")
       .reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
 
+    // Wallet balance: collected cash on delivered orders minus shipped-but-
+    // not-yet-paid balance. Delivered = money in, everything else pending.
+    const deliveredSum = revenue;
+    const pipelineSum = active
+      .filter((o) => o.status === "active")
+      .reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
+
     return {
       total: active.length,
       byStatus,
@@ -180,6 +187,7 @@ export const stats = query({
       todayCount: active.filter(
         (o) => o._creationTime > Date.now() - 24 * 60 * 60 * 1000,
       ).length,
+      wallet: Math.round((deliveredSum - pipelineSum) * 100) / 100,
     };
   },
 });
