@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@/assets/logo.svg";
@@ -113,9 +112,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="truncate text-xs font-medium">
               {user?.name ?? user?.email ?? "Përdorues"}
             </div>
-            <Badge variant="secondary" className="mt-0.5 text-[10px]">
-              {isAdmin ? "Admin" : "Agent"}
-            </Badge>
+            <span
+              className={cn(
+                "mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                "bg-slate-100 text-blue-700 dark:bg-slate-800 dark:text-blue-400",
+              )}
+            >
+              Administrator i Kompanisë
+            </span>
           </div>
         </div>
         <Button

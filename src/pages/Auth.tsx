@@ -123,6 +123,24 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       : "skip",
   );
 
+  // 2-Step tenant verification state: when the typed email resolves to a
+  // company, direct password auth is blocked on root /login and the admin
+  // is routed through their branded company page instead.
+  const [hasCompanyTenant, setHasCompanyTenant] = useState(false);
+  const [resolvedStore, setResolvedStore] = useState<{
+    slug: string;
+    name: string;
+  } | null>(null);
+  useEffect(() => {
+    if (emailTenant) {
+      setHasCompanyTenant(true);
+      setResolvedStore({ slug: emailTenant.slug, name: emailTenant.name });
+    } else if (emailTenant === null) {
+      setHasCompanyTenant(false);
+      setResolvedStore(null);
+    }
+  }, [emailTenant]);
+
   // ── 2. Data scope injection: bind workspace to resolved tenant ─────────
   const setActiveTenant = useMutation(api.tenants.setActiveTenant);
   useEffect(() => {
@@ -176,6 +194,19 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
   const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    // ── Step 1 of tenant verification: block direct auth on root /login ──
+    // When the email resolves to a company and no ?tenant= param is present,
+    // password authentication is NOT executed here. The Company Link Card
+    // routes the admin through /login?tenant={slug} first (Step 2).
+    if (!isTenantMode && hasCompanyTenant && resolvedStore) {
+      event.stopPropagation();
+      toast.info("Përdorni linkun e dedikuar të kompanisë suaj për hyrje.", {
+        description: "Hyr nga linku i kompanisë më poshtë.",
+      });
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -465,16 +496,15 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </button>
                 </div>
 
-                {/* Automatic company link card — only once the email
-                    matches a company in the database */}
-                {!isTenantMode && (
+                {/* Company Link Card — 2-step tenant verification: shown
+                    only when hasCompanyTenant is true and we are NOT on a
+                    branded ?tenant= page. Direct auth is blocked above. */}
+                {!isTenantMode && hasCompanyTenant && resolvedStore && (
                   <AnimatePresence initial={false} mode="popLayout">
-                    {emailTenant ? (
-                      <TenantLinkSection
-                        key="tenant-link"
-                        matchedTenant={emailTenant}
-                      />
-                    ) : null}
+                    <TenantLinkSection
+                      key="tenant-link"
+                      matchedTenant={resolvedStore}
+                    />
                   </AnimatePresence>
                 )}
 
@@ -513,8 +543,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </Button>
 
                 <p className="pt-1 text-center text-xs leading-relaxed text-muted-foreground">
-                  Rolat e përdoruesit (Klient · Agent · Admin) caktohen
-                  automatikisht nga administratori i kompanisë.
+                  Çdo llogari është Administrator i Kompanisë (Business
+                  Tenant). Hyrja bëhet përmes linkut të dedikuar të kompanisë.
                 </p>
               </form>
             )}
