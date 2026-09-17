@@ -59,6 +59,16 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [rememberMe, setRememberMe] = useState(true);
   const boundRef = useRef(false);
 
+  // Password reset flow: "forgot" = request code by email, "reset" = enter
+  // the 6-digit code + the new password (typed twice).
+  const [view, setView] = useState<"login" | "forgot" | "reset">("login");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
   const redirect = resolveRedirectAfterAuth(
     searchParams.get("returnTo"),
     redirectAfterAuth,
@@ -165,6 +175,52 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           : "Kyçja dështoi. Provoni përsëri.",
       );
       setIsLoading(false);
+    }
+  };
+
+  const handleRequestReset = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setResetLoading(true);
+    setResetError(null);
+    try {
+      await signIn("password", { flow: "reset", email: resetEmail });
+      toast.success("Kodi i rivendosjes u dërgua në emailin tuaj.");
+      setView("reset");
+    } catch {
+      // Never reveal whether the email exists.
+      toast.success(
+        "Nëse emaili ekziston, kodi i rivendosjes u dërgua.",
+      );
+      setView("reset");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (resetPassword !== resetConfirm) {
+      setResetError("Fjalëkalimet nuk përputhen.");
+      return;
+    }
+    setResetLoading(true);
+    setResetError(null);
+    try {
+      await signIn("password", {
+        flow: "reset-verification",
+        email: resetEmail,
+        code: resetCode,
+        newPassword: resetPassword,
+      });
+      toast.success("Fjalëkalimi u ndryshua me sukses.");
+      navigate(redirect);
+    } catch (err) {
+      setResetError(
+        err instanceof Error && err.message.includes("Invalid")
+          ? "Kodi është i pasaktë ose ka skaduar."
+          : "Rivendosja dështoi. Provoni përsëri.",
+      );
+      setResetLoading(false);
     }
   };
 
@@ -322,11 +378,18 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 />
               </Link>
               <h1 className="text-3xl font-bold tracking-tight">
-                Mirë se u ktheve
+                {view === "login"
+                  ? "Mirë se u ktheve"
+                  : view === "forgot"
+                    ? "Rivendos fjalëkalimin"
+                    : "Fjalëkalimi i ri"}
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Kyçu për të menaxhuar porositë, tracking dhe integrimet me
-                postat.
+                {view === "login"
+                  ? "Kyçu për të menaxhuar porositë, tracking dhe integrimet me postat."
+                  : view === "forgot"
+                    ? "Shkruani emailin e llogarisë suaj dhe do t'ju dërgojmë një kod rivendosjeje."
+                    : `Shkruani kodin e dërguar në ${resetEmail} dhe fjalëkalimin tuaj të ri.`}
               </p>
             </motion.div>
           )}
@@ -337,44 +400,234 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             transition={{ duration: 0.4, delay: 0.08, ease: "easeOut" }}
             className="rounded-2xl border bg-card p-6"
           >
-            <form onSubmit={handleSignIn} className="space-y-4">
-              {passwordFields("login")}
+            {view === "login" && (
+              <form onSubmit={handleSignIn} className="space-y-4">
+                {passwordFields("login")}
 
-              {error && (
-                <p className="text-sm text-destructive" role="alert">
-                  {error}
-                </p>
-              )}
+                {error && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {error}
+                  </p>
+                )}
 
-              <div className="flex items-center justify-between pt-1">
-                {checkbox}
+                <div className="flex items-center justify-between pt-1">
+                  {checkbox}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetEmail("");
+                      setResetCode("");
+                      setResetPassword("");
+                      setResetConfirm("");
+                      setResetError(null);
+                      setView("forgot");
+                    }}
+                    className="cursor-pointer text-sm text-muted-foreground transition-colors hover:text-primary"
+                  >
+                    Keni harruar fjalëkalimin?
+                  </button>
+                </div>
+
+                {/* Tenant slug resolver — only on the global login */}
+                {!isTenantMode && <TenantLinkSection />}
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : null}
+                  Hyr në Llogari
+                </Button>
+              </form>
+            )}
+
+            {view === "forgot" && (
+              <form onSubmit={handleRequestReset} className="space-y-4">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="reset-email"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Email Adresa
+                  </Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="reset-email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="emri@shembull.com"
+                      className="h-11 rounded-xl pl-10"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      disabled={resetLoading}
+                      required
+                    />
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Do t'ju dërgojmë një kod 6-shifror për rivendosjen e
+                    fjalëkalimit.
+                  </p>
+                </div>
+
+                {resetError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {resetError}
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                  disabled={resetLoading}
+                >
+                  {resetLoading ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : null}
+                  Dërgo kodin e rivendosjes
+                </Button>
+
                 <button
                   type="button"
-                  onClick={() =>
-                    toast.info(
-                      "Kontaktoni administratorin e kompanisë suaj për të rivendosur fjalëkalimin.",
-                    )
-                  }
-                  className="cursor-pointer text-sm text-muted-foreground transition-colors hover:text-primary"
+                  onClick={() => setView("login")}
+                  className="w-full cursor-pointer text-center text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
-                  Keni harruar fjalëkalimin?
+                  ← Kthehu në hyrje
                 </button>
-              </div>
+              </form>
+            )}
 
-              {/* Tenant slug resolver — only on the global login */}
-              {!isTenantMode && <TenantLinkSection />}
+            {view === "reset" && (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="reset-code"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Kodi i rivendosjes
+                  </Label>
+                  <Input
+                    id="reset-code"
+                    value={resetCode}
+                    onChange={(e) =>
+                      setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="000000"
+                    inputMode="numeric"
+                    maxLength={6}
+                    className="h-11 rounded-xl text-center text-lg font-semibold tracking-[0.4em]"
+                    disabled={resetLoading}
+                    required
+                  />
+                </div>
 
-              <Button
-                type="submit"
-                className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : null}
-                Hyr në Llogari
-              </Button>
-            </form>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="new-password"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Fjalëkalimi i ri
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="new-password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      className="h-11 rounded-xl pl-10 pr-10"
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                      disabled={resetLoading}
+                      required
+                      minLength={8}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((s) => !s)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      tabIndex={-1}
+                      aria-label={
+                        showPassword ? "Fshih fjalëkalimin" : "Shfaq fjalëkalimin"
+                      }
+                    >
+                      {showPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="confirm-password"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Përsërit fjalëkalimin
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="confirm-password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      className="h-11 rounded-xl pl-10 pr-10"
+                      value={resetConfirm}
+                      onChange={(e) => setResetConfirm(e.target.value)}
+                      disabled={resetLoading}
+                      required
+                      minLength={8}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((s) => !s)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      tabIndex={-1}
+                      aria-label={
+                        showPassword ? "Fshih fjalëkalimin" : "Shfaq fjalëkalimin"
+                      }
+                    >
+                      {showPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {resetError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {resetError}
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                  disabled={resetLoading}
+                >
+                  {resetLoading ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : null}
+                  Ruaj fjalëkalimin e ri
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={() => setView("login")}
+                  className="w-full cursor-pointer text-center text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
+                >
+                  ← Kthehu në hyrje
+                </button>
+              </form>
+            )}
 
             {/* Bottom "back to normal login" link in tenant mode */}
             {isTenantMode && (

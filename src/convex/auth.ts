@@ -5,12 +5,17 @@ import { Anonymous } from "@convex-dev/auth/providers/Anonymous";
 import { Password } from "@convex-dev/auth/providers/Password";
 import Google from "@auth/core/providers/google";
 import { emailOtp } from "./auth/emailOtp";
+import { resetEmailOtp } from "./auth/resetEmailOtp";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
     emailOtp,
     Anonymous,
-    Password,
+    Password({
+      // Enables the `reset` / `reset-verification` flows: requesting a reset
+      // emails a 6-digit code; entering it + a new password changes it.
+      reset: resetEmailOtp,
+    }),
     ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
       ? [Google]
       : []),
