@@ -99,8 +99,14 @@ export default function Orders() {
 
   const handleDelete = async (id: string) => {
     try {
-      await removeOrder({ id: id as never });
-      toast.success("Porosia u fshi");
+      // The mutation no-ops (returns null) if the order was already deleted
+      // by another session — a real-time sync race, not an error.
+      const result = await removeOrder({ id: id as never });
+      if (result === null) {
+        toast.info("Porosia ishte fshirë tashmë.");
+      } else {
+        toast.success("Porosia u fshi");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gabim");
     }

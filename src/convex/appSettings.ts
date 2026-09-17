@@ -71,33 +71,45 @@ const DEFAULT_SHIPPING_RATES: Record<string, number> = {
   "Maqedoni": 3.0,
 };
 
-// Returns whether the Gemini API key is configured (used by /orders/new to decide engine)
+// Returns whether the Gemini API key is configured (used by /orders/new to decide
+// engine). NEVER throws — a failed/missing read simply means "not configured".
 export const hasGeminiKey = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) return false;
-    const gemini = await ctx.db
-      .query("app_settings")
-      .withIndex("by_key", (q) => q.eq("key", "gemini_api_key"))
-      .first();
-    return Boolean(gemini?.value);
+    try {
+      const user = await getCurrentUser(ctx);
+      if (!user) return false;
+      const gemini = await ctx.db
+        .query("app_settings")
+        .withIndex("by_key", (q) => q.eq("key", "gemini_api_key"))
+        .first();
+      return Boolean(gemini?.value);
+    } catch (err) {
+      console.error("hasGeminiKey failed, treating as not configured:", err);
+      return false;
+    }
   },
 });
 
-// Admin only: read the actual secret (used server-side by the parse action)
+// Admin only: read the actual secret (used server-side by the parse action).
+// NEVER throws — returns null on any missing/unauthorized/failed read.
 export const getSetting = query({
   args: { key: v.string() },
   handler: async (ctx, { key }) => {
-    const user = await getCurrentUser(ctx);
-    if (!user || !(await isAdminUser(user))) {
+    try {
+      const user = await getCurrentUser(ctx);
+      if (!user || !(await isAdminUser(user))) {
+        return null;
+      }
+      const setting = await ctx.db
+        .query("app_settings")
+        .withIndex("by_key", (q) => q.eq("key", key))
+        .first();
+      return setting?.value ?? null;
+    } catch (err) {
+      console.error(`getSetting(${key}) failed:`, err);
       return null;
     }
-    const setting = await ctx.db
-      .query("app_settings")
-      .withIndex("by_key", (q) => q.eq("key", key))
-      .first();
-    return setting?.value ?? null;
   },
 });
 
@@ -122,7 +134,8 @@ async function loadShippingRates(ctx: any) {
 }
 
 
-// Admin only: upsert a setting
+// Admin only: upsert a setting. Throws only on authorization/validation
+// problems (surfaced to the UI as toasts); DB races are handled safely.
 export const setSetting = mutation({
   args: { key: v.string(), value: v.string() },
   handler: async (ctx, { key, value }) => {
@@ -139,10 +152,16 @@ export const setSetting = mutation({
       }
     }
 
-    const existing = await ctx.db
-      .query("app_settings")
-      .withIndex("by_key", (q) => q.eq("key", key))
-      .first();
+    let existing: { _id: any } | null = null;
+    try {
+      existing = await ctx.db
+        .query("app_settings")
+        .withIndex("by_key", (q) => q.eq("key", key))
+        .first();
+    } catch (err) {
+      console.error(`setSetting(${key}) read failed, will insert:`, err);
+      existing = null;
+    }
     if (existing) {
       await ctx.db.patch(existing._id, {
         value,

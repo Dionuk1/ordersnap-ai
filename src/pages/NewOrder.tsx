@@ -110,7 +110,10 @@ export default function NewOrder() {
   }, [form.country, publicSettings]);
 
   const pickImage = (file: File | null | undefined) => {
-    if (!file || !file.type.startsWith("image/")) { toast.error("Skedari duhet të jetë imazh."); return; }
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("Skedari duhet të jetë imazh."); return; }
+    // Revoke the previous object URL so repeated uploads don't leak memory.
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImage(file);
     setImagePreview(URL.createObjectURL(file));
     setForm({ ...EMPTY_PARSED_ORDER });
@@ -156,19 +159,30 @@ export default function NewOrder() {
         }
       }
       if (!usedEngine) {
-        const text = await runOcr(image, (p) => setOcrProgress(p));
+        // OCR fallback: a thrown OCR error must not crash the page — degrade
+        // gracefully to the manual form with a clear warning.
+        let text = "";
+        try {
+          text = await runOcr(image, (p) => setOcrProgress(p));
+        } catch (ocrErr) {
+          console.warn("OCR failed:", ocrErr);
+          setParseError("OCR dështoi — plotësoni fushat manualisht.");
+          setEngine(null);
+          setMode("manual");
+          return;
+        }
         setOcrText(text);
         const parsed = parseOrderTextLocal(text);
         setForm({
-          first_name: parsed.first_name,
-          last_name: parsed.last_name,
-          phone: parsed.phone,
+          first_name: parsed.first_name ?? "",
+          last_name: parsed.last_name ?? "",
+          phone: parsed.phone ?? "",
           instagram: "",
-          city: parsed.city,
-          address: parsed.address,
+          city: parsed.city ?? "",
+          address: parsed.address ?? "",
           addressDetails: "",
           country: "Kosovë",
-          productDescription: parsed.productDescription,
+          productDescription: parsed.productDescription ?? "",
           productPrice: parsed.totalAmount ?? 0,
           postalFee: 0,
           totalAmount: parsed.totalAmount ?? 0,
