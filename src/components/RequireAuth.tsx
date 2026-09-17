@@ -17,11 +17,16 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated) {
     const returnTo = `${location.pathname}${location.search}`;
+    const params = new URLSearchParams({
+      returnTo,
+    });
+    // Preserve tenant context across the guard redirect: a branded session
+    // timeout must land back on the company's /login?tenant={slug} page, not
+    // silently downgrade to the generic login.
+    const tenant = new URLSearchParams(location.search).get("tenant");
+    if (tenant) params.set("tenant", tenant);
     return (
-      <Navigate
-        to={`/login?returnTo=${encodeURIComponent(returnTo)}`}
-        replace
-      />
+      <Navigate to={`/login?${params.toString()}`} replace />
     );
   }
 

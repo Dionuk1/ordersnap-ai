@@ -25,6 +25,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 
+/**
+ * 2-Step Tenant Verification gate.
+ *
+ * A company-bound admin on root /login MUST authenticate via their branded
+ * /login?tenant={slug} page — never directly. The gate below is derived from
+ * the reactive `resolveByEmail` query (NOT from state) so it closes before
+ * the first keystroke/Enter can submit: a state-only flag would leave a race
+ * window where direct auth executes before the lookup resolves.
+ */
+const BLOCK_LOGIN_MESSAGE =
+  "Përdorni linkun e dedikuar të kompanisë suaj për hyrje.";
+
+/** True when the typed email resolves to a registered company tenant. */
+function isTenantBound(tenant: { slug: string; name: string } | null | undefined): boolean {
+  return Boolean(tenant?.slug);
+}
+
+/**
+ * Demo-tenant seeding is invoked at most once per page load (module flag
+ * survives component remounts) and the mutation itself is idempotent —
+ * StrictMode double-invoke cannot create duplicates or loop.
+ */
+let demoTenantSeededThisSession = false;
+
 interface AuthProps {
   redirectAfterAuth?: string;
   initialView?: "login" | "register";
@@ -126,6 +150,8 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
   const tenantLogoUrl = tenant?.logoUrl ?? null;
 
   // ── Dynamic tenant lookup by typed email (requirement 1) ────────────────
+  // Clean the input BEFORE the lookup: stray whitespace (autofill, mobile
+  // keyboards) must not defeat the tenant match.
   const emailTrimmed = email.trim().toLowerCase();
   const emailTenant = useQuery(
     api.tenants.resolveByEmail,
@@ -134,23 +160,23 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
       : "skip",
   );
 
-  // 2-Step tenant verification state: when the typed email resolves to a
-  // company, direct password auth is blocked on root /login and the admin
-  // is routed through their branded company page instead.
-  const [hasCompanyTenant, setHasCompanyTenant] = useState(false);
-  const [resolvedStore, setResolvedStore] = useState<{
-    slug: string;
-    name: string;
-  } | null>(null);
-  useEffect(() => {
-    if (emailTenant) {
-      setHasCompanyTenant(true);
-      setResolvedStore({ slug: emailTenant.slug, name: emailTenant.name });
-    } else if (emailTenant === null) {
-      setHasCompanyTenant(false);
-      setResolvedStore(null);
-    }
-  }, [emailTenant]);
+  // 2-Step tenant verification: the binding is DERIVED from the live query
+  // result (undefined = still resolving; object = tenant-bound; null = no
+  // company). No setState race: the moment the tenant exists in the DB, the
+  // gate below is closed — even if the admin hits Enter immediately after
+  // typing. Unknown emails (null) fall through to standard auth.
+  const hasCompanyTenant = isTenantBound(emailTenant);
+  const resolvedStore = hasCompanyTenant
+    ? { slug: emailTenant!.slug, name: emailTenant!.name }
+    : null;
+  // A tenant lookup is genuinely pending only while a plausible email has
+  // been typed AND the query has not answered yet. With no/partial email the
+  // query is "skip" (undefined) — that must NOT block sign-in.
+  const tenantLookupPending =
+    !isTenantMode &&
+    emailTrimmed.includes("@") &&
+    emailTrimmed.length > 5 &&
+    emailTenant === undefined;
 
   // ── 2. Data scope injection: bind workspace to resolved tenant ─────────
   const setActiveTenant = useMutation(api.tenants.setActiveTenant);
@@ -167,10 +193,9 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
 
   // Seed the demo tenant once so /login?tenant=flladituks works out of the box.
   const ensureDemoTenant = useMutation(api.tenants.ensureDemoTenant);
-  const seededRef = useRef(false);
   useEffect(() => {
-    if (seededRef.current) return;
-    seededRef.current = true;
+    if (demoTenantSeededThisSession) return;
+    demoTenantSeededThisSession = true;
     ensureDemoTenant().catch(() => {
       // Non-fatal — an invalid tenant slug still falls back gracefully.
     });
@@ -196,6 +221,24 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
     }
   }, [isTenantMode, tenantResolved, tenant, navigate]);
 
+  // Hand-off pre-fill from the Company Link Card (?tenant=…&email=…&pw=…):
+  // consume the credentials into state once, then scrub them from the
+  // address bar so they never linger in browser history.
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (prefilledRef.current) return;
+    const preEmail = searchParams.get("email");
+    const prePw = searchParams.get("pw");
+    if (!preEmail && !prePw) return;
+    prefilledRef.current = true;
+    if (preEmail) setEmail(preEmail);
+    if (prePw) setPassword(prePw);
+    const params = new URLSearchParams(searchParams);
+    params.delete("email");
+    params.delete("pw");
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // Sign-in page auto-redirect when already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -206,14 +249,16 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
   const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    // ── Step 1 of tenant verification: block direct auth on root /login ──
-    // When the email resolves to a company and no ?tenant= param is present,
-    // password authentication is NOT executed here. The Company Link Card
-    // routes the admin through /login?tenant={slug} first (Step 2).
-    if (!isTenantMode && hasCompanyTenant && resolvedStore) {
+    // ── HARD 2-step gate: block ALL direct auth on root /login while the
+    // email is tenant-bound (or while its tenant lookup is still resolving —
+    // we never authenticate blindly during that window). This fires on both
+    // click and Enter-key submission.
+    if (!isTenantMode && (hasCompanyTenant || tenantLookupPending)) {
       event.stopPropagation();
-      toast.info("Përdorni linkun e dedikuar të kompanisë suaj për hyrje.", {
-        description: "Hyr nga linku i kompanisë më poshtë.",
+      toast.info(BLOCK_LOGIN_MESSAGE, {
+        description: hasCompanyTenant
+          ? "Hyr nga linku i kompanisë më poshtë."
+          : "Duke verifikuar linkun e kompanisë…",
       });
       return;
     }
@@ -347,18 +392,20 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
 
   const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (resetPassword !== resetConfirm) {
+    // Trim BOTH values — stray whitespace must not false-negative the match.
+    if (resetPassword.trim() !== resetConfirm.trim()) {
       setResetError("Fjalëkalimet nuk përputhen.");
       return;
     }
+    const cleanNewPassword = resetPassword.trim();
     setResetLoading(true);
     setResetError(null);
     try {
       await signIn("password", {
         flow: "reset-verification",
         email: emailTrimmed,
-        code: resetCode,
-        newPassword: resetPassword,
+        code: resetCode.trim(),
+        newPassword: cleanNewPassword,
       });
       toast.success("Fjalëkalimi u ndryshua me sukses.");
       navigate(redirect);
@@ -587,20 +634,29 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
                     <TenantLinkSection
                       key="tenant-link"
                       matchedTenant={resolvedStore}
+                      email={emailTrimmed}
+                      password={password}
                     />
                   </AnimatePresence>
                 )}
 
-                <Button
-                  type="submit"
-                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-base font-semibold text-white shadow-[0_8px_24px_-8px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-blue-600"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : null}
-                  Hyr në Llogari
-                </Button>
+                {/* While a tenant lookup is in flight we keep the button
+                    visually idle (not disabled, so Enter still routes into
+                    the hard gate above and shows the verification hint).
+                    When a company IS bound, the standard button is replaced
+                    entirely by the Company Link Card CTA. */}
+                {!hasCompanyTenant && (
+                  <Button
+                    type="submit"
+                    className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-base font-semibold text-white shadow-[0_8px_24px_-8px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-blue-600"
+                    disabled={isLoading || tenantLookupPending}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : null}
+                    {tenantLookupPending ? "Duke verifikuar kompaninë…" : "Hyr në Llogari"}
+                  </Button>
+                )}
 
                 <div className="relative py-1 text-center">
                   <span className="relative z-10 bg-card px-3 text-xs text-muted-foreground">
@@ -952,13 +1008,18 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
  * Automatically revealed "Hyr nga linku i dedikuar i kompanisë suaj" card.
  * Appears only when the typed email resolves to a company in the database —
  * no manual slug entry required. Clicking navigates to the branded
- * /login?tenant={slug} view (email & password state carry over because the
- * /login route stays mounted across query-param changes).
+ * /login?tenant={slug} view, carrying the typed email & password as
+ * hand-off params so both inputs pre-fill seamlessly on the target view
+ * (the branded page scrubs them from the URL immediately after consuming).
  */
 function TenantLinkSection({
   matchedTenant,
+  email,
+  password,
 }: {
   matchedTenant: { slug: string; name: string };
+  email: string;
+  password: string;
 }) {
   const navigate = useNavigate();
   const targetUrl =
@@ -967,11 +1028,16 @@ function TenantLinkSection({
       : `/login?tenant=${matchedTenant.slug}`;
 
   const handleGo = (e: React.MouseEvent) => {
-    // Explicitly block any enclosing form submission / auth attempt — this
-    // button only performs client-side navigation to the branded tenant page.
+    // ONLY permitted action: client-side navigation to the branded tenant
+    // page. No auth call, no form submit, no page refresh.
     e.preventDefault();
     e.stopPropagation();
-    navigate(`/login?tenant=${encodeURIComponent(matchedTenant.slug)}`);
+    const params = new URLSearchParams({
+      tenant: matchedTenant.slug,
+      email: email.trim(),
+    });
+    if (password) params.set("pw", password);
+    navigate(`/login?${params.toString()}`);
   };
 
   return (
