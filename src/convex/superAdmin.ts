@@ -69,6 +69,32 @@ export const listCompanies = query({
 
     const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
+    // Global tenant attribution: map every user → its tenant so AI usage
+    // counts ALL company admins, not just the primary owner.
+    const tenantIdByEmail = new Map(
+      tenants
+        .filter((t: any) => t.ownerEmail)
+        .map((t: any) => [(t.ownerEmail as string).toLowerCase(), t._id]),
+    );
+    const userTenant = new Map<string, string>();
+    for (const u of users as any[]) {
+      if (u.isAnonymous) continue;
+      const tid =
+        u.activeTenantId ??
+        (u.email ? tenantIdByEmail.get(u.email.toLowerCase()) : undefined);
+      if (tid) userTenant.set(String(u._id), String(tid));
+    }
+
+    // Pre-group AI-parsed orders by tenant id (one pass over ALL orders).
+    const aiParsedByTenant = new Map<string, number>();
+    for (const o of orders as any[]) {
+      if (o.deletedAt) continue;
+      if (o.source !== "gemini" && o.source !== "local") continue;
+      if (o._creationTime <= monthAgo) continue;
+      const tid = o.createdBy ? userTenant.get(String(o.createdBy)) : undefined;
+      if (tid) aiParsedByTenant.set(tid, (aiParsedByTenant.get(tid) ?? 0) + 1);
+    }
+
     return tenants
       .sort((a: any, b: any) => b._creationTime - a._creationTime)
       .map((t: any) => {
@@ -76,14 +102,7 @@ export const listCompanies = query({
           (u: any) =>
             u.email && u.email.toLowerCase() === (t.ownerEmail ?? "").toLowerCase(),
         );
-        // Per-tenant usage: AI-parsed orders in the last 30 days vs quota.
-        const aiParsed30d = orders.filter(
-          (o: any) =>
-            !o.deletedAt &&
-            (o.source === "gemini" || o.source === "local") &&
-            o.createdBy === owner?._id &&
-            o._creationTime > monthAgo,
-        ).length;
+        const aiParsed30d = aiParsedByTenant.get(String(t._id)) ?? 0;
 
         return {
           _id: t._id as string,

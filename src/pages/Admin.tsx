@@ -1,4 +1,5 @@
 import { api } from "@/convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
 import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/AppShell";
 import { RequireSuperAdmin } from "@/components/RequireSuperAdmin";
@@ -81,6 +82,9 @@ function useActiveTab(): [Tab, (t: Tab) => void] {
 }
 
 export default function SuperAdmin() {
+  // One shared, unrestricted global query — both Kompanitë and Abonimet
+  // render the exact same dataset (all registered tenants, zero filters).
+  const companies = useQuery(api.superAdmin.listCompanies, {});
   const [tab, setTab] = useActiveTab();
 
   return (
@@ -117,8 +121,8 @@ export default function SuperAdmin() {
             </header>
           </FadeIn>
 
-          {tab === "companies" && <CompaniesTab />}
-          {tab === "subscriptions" && <SubscriptionsTab />}
+          {tab === "companies" && <CompaniesTab companies={companies} />}
+          {tab === "subscriptions" && <SubscriptionsTab companies={companies} />}
           {tab === "audit" && <AuditTab />}
           {tab === "config" && <ConfigTab />}
           {tab === "staff" && <StaffTab />}
@@ -180,8 +184,11 @@ import { HoverScale as MotionCard } from "@/components/motion";
 
 // ── Kompanitë ───────────────────────────────────────────────────────────────
 
-function CompaniesTab() {
-  const companies = useQuery(api.superAdmin.listCompanies, {});
+type CompanyList =
+  | FunctionReturnType<typeof api.superAdmin.listCompanies>
+  | undefined;
+
+function CompaniesTab({ companies }: { companies: CompanyList }) {
   const setStatus = useMutation(api.superAdmin.setCompanyStatus);
   const impersonate = useMutation(api.superAdmin.impersonate);
   const generateTemp = useAction(api.superAdmin.generateTempPassword);
@@ -322,8 +329,7 @@ function CompaniesTab() {
 
 // ── Abonimet (SaaS Subscriptions) ───────────────────────────────────────────
 
-function SubscriptionsTab() {
-  const companies = useQuery(api.superAdmin.listCompanies, {});
+function SubscriptionsTab({ companies }: { companies: CompanyList | undefined }) {
   const setTier = useMutation(api.superAdmin.setCompanyTier);
   const setQuota = useMutation(api.superAdmin.setCompanyQuota);
   const [quotaDrafts, setQuotaDrafts] = useState<Record<string, string>>({});
