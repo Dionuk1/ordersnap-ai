@@ -701,7 +701,11 @@ function TenantLinkSection({
       ? `${window.location.origin}/login?tenant=${matchedTenant.slug}`
       : `/login?tenant=${matchedTenant.slug}`;
 
-  const handleGo = () => {
+  const handleGo = (e: React.MouseEvent) => {
+    // Explicitly block any enclosing form submission / auth attempt — this
+    // button only performs client-side navigation to the branded tenant page.
+    e.preventDefault();
+    e.stopPropagation();
     navigate(`/login?tenant=${encodeURIComponent(matchedTenant.slug)}`);
   };
 
