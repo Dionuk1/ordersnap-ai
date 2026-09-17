@@ -207,6 +207,17 @@ export const markCourierSynced = mutation({
   },
 });
 
+export const saveTrackingBarcode = mutation({
+  args: { id: v.id("orders"), barcode: v.string() },
+  handler: async (ctx, { id, barcode }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) throw new Error("Not authenticated");
+    const order = await ctx.db.get(id);
+    if (!order || order.deletedAt) throw new Error("Porosia nuk u gjet");
+    await ctx.db.patch(id, { trackingBarcode: barcode });
+  },
+});
+
 // Recent orders for dashboard widget
 export const recent = query({
   args: { limit: v.optional(v.number()) },

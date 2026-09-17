@@ -58,8 +58,15 @@ export const COUNTRY_LABELS: Record<string, string> = {
 // Defaults match the requested regional rates.
 export const DEFAULT_SHIPPING_RATES: Record<string, number> = {
   "Kosovë": 2.0,
-  "Shqipëri": 6.0,
+  "Shqipëri": 3.0,
   "Maqedoni": 3.0,
+};
+
+// Flag emoji shown next to country pickers in the order form and settings.
+export const COUNTRY_FLAGS: Record<string, string> = {
+  "Kosovë": "🇽🇰",
+  "Shqipëri": "🇦🇱",
+  "Maqedoni": "🇲🇰",
 };
 
 // Key used to fetch per-country rates from Convex app settings.

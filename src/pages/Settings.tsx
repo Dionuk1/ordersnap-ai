@@ -29,14 +29,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMutation, useQuery } from "convex/react";
+import { COUNTRIES, COUNTRY_FLAGS, COUNTRY_LABELS } from "@/lib/order-types";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Bot,
   Eye,
   EyeOff,
   KeyRound,
   Loader2,
+  PlugZap,
+  Save,
   Sparkles,
+  Truck,
   Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -58,6 +62,7 @@ export default function Settings() {
           </header>
 
           <GeminiSection />
+          <ShippingRatesSection />
           <CourierSection />
           <StaffSection />
         </div>
@@ -175,50 +180,252 @@ function GeminiSection() {
   );
 }
 
+/** Regional shipping rates per country (EUR), stored in app_settings. */
+function ShippingRatesSection() {
+  const settings = useQuery(api.appSettings.getPublicSettings, {});
+  const setSetting = useMutation(api.appSettings.setSetting);
+  const [rates, setRates] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      setRates({
+        "Kosovë": String(settings.shippingRates["Kosovë"] ?? 2),
+        "Shqipëri": String(settings.shippingRates["Shqipëri"] ?? 3),
+        "Maqedoni": String(settings.shippingRates["Maqedoni"] ?? 3),
+      });
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      for (const country of COUNTRIES) {
+        const raw = (rates[country] ?? "").replace(",", ".").trim();
+        const num = Number(raw);
+        if (!Number.isFinite(num) || num < 0) {
+          toast.error(`Tarifa për ${COUNTRY_LABELS[country] ?? country} duhet të jetë numër i vlefshëm.`);
+          setSaving(false);
+          return;
+        }
+        await setSetting({ key: `shipping_rate_${country.toLowerCase().replace(/[^a-z0-9]/g, "")}`, value: String(num) });
+      }
+      toast.success("Tarifat postare u ruajtën.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ruajtja dështoi.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="border-border/60">
+      <CardHeader>
+        <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Truck className="size-5" />
+        </div>
+        <CardTitle className="text-base">Tarifat Regionale të Postës (€)</CardTitle>
+        <CardDescription>
+          Tarifa fillestare për vend. Këto vlera paraplotësojnë automatikisht
+          fushën "Tarifa postare" kur zgjidhet vendi në formularin e porosisë.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {settings === undefined ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {COUNTRIES.map((country) => (
+                <div key={country} className="space-y-1.5">
+                  <Label htmlFor={`rate-${country}`}>
+                    <span className="mr-1.5" aria-hidden>
+                      {COUNTRY_FLAGS[country]}
+                    </span>
+                    {COUNTRY_LABELS[country] ?? country}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id={`rate-${country}`}
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={rates[country] ?? ""}
+                      onChange={(e) => setRates((r) => ({ ...r, [country]: e.target.value }))}
+                      className="pr-8"
+                    />
+                    <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">€</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
+              Ruaj tarifat
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Konfigurimi i Postës (Posta Cheetah) — credentials, test, auto-dispatch. */
 function CourierSection() {
+  const config = useQuery(api.cheetah.getConfig, {});
+  const saveConfig = useMutation(api.cheetah.saveConfig);
+  const testConnection = useAction(api.cheetah.testConnection);
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [apiUrl, setApiUrl] = useState("");
+  const [autoDispatch, setAutoDispatch] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (config && !loaded) {
+      setUsername(config.username ?? "");
+      setApiUrl(config.apiUrl ?? "");
+      setAutoDispatch(config.autoDispatch);
+      setLoaded(true);
+    }
+  }, [config, loaded]);
+
+  const handleSave = async () => {
+    if (!username.trim() || !password) {
+      toast.error("Plotësoni Shfrytëzuesin dhe Fjalëkalimin.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveConfig({ username: username.trim(), password, apiUrl: apiUrl.trim() || undefined, autoDispatch });
+      toast.success("Lidhja me Postën Cheetah u ruajt.");
+      setPassword("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ruajtja dështoi.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!username.trim() || !password) {
+      toast.error("Plotësoni Shfrytëzuesin dhe Fjalëkalimin për testim.");
+      return;
+    }
+    setTesting(true);
+    try {
+      const result = await testConnection({ username: username.trim(), password, apiUrl: apiUrl.trim() || undefined });
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch {
+      toast.error("Testimi i lidhjes dështoi.");
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <Card className="border-border/60">
       <CardHeader>
         <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Bot className="size-5" />
         </div>
-        <CardTitle className="text-base">Integrimi me Korrier Ekspres</CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-base">Konfigurimi i Postës (Posta Cheetah)</CardTitle>
+          {config !== undefined && (
+            <Badge variant={config.hasCredentials ? "default" : "secondary"}>
+              {config.hasCredentials ? "Konfiguruar" : "Nuk është konfiguruar"}
+            </Badge>
+          )}
+        </div>
         <CardDescription>
-          Lidhni API-n e korrierit tuaj (p.sh. Posta, Novapost, Econt) për të
-          dërguar porositë automatikisht. Vendosni URL-në e API dhe çelësin.
+          Lidhni llogarinë e Postës Cheetah për të dërguar porositë automatikisht
+          dhe për të marrë kodin e gjurmimit (barcode).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="courier-url">API URL</Label>
-            <Input
-              id="courier-url"
-              placeholder="https://api.korrieri.al/v1/shipments"
-            />
+        {config === undefined ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="courier-key">API Key</Label>
-            <Input
-              id="courier-key"
-              type="password"
-              placeholder="••••••••••••"
-            />
-          </div>
-        </div>
-        <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
-          <div>
-            <p className="text-sm font-medium">Sinkronizim automatik</p>
-            <p className="text-xs text-muted-foreground">
-              Dërgo porositë e konfirmuara te korrieri automatikisht.
-            </p>
-          </div>
-          <Switch defaultChecked={false} disabled />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Integrimi i plotë me korrierin kërkon konfigurim shtesë — të dhënat e
-          mësipërme ruhen për përdorim të ardhshëm.
-        </p>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="cheetah-username">Shfrytëzuesi</Label>
+                <Input
+                  id="cheetah-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="ID e llogarisë / përdoruesi"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cheetah-password">Fjalëkalimi</Label>
+                <div className="relative">
+                  <Input
+                    id="cheetah-password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={config.hasCredentials ? "•••••••• (ruajtur)" : "••••••••"}
+                    autoComplete="new-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cheetah-url">API URL (opsional)</Label>
+              <Input
+                id="cheetah-url"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                placeholder="https://apigw.posta-ime.com"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
+              <div>
+                <p className="text-sm font-medium">Dërgo automatikisht në postë</p>
+                <p className="text-xs text-muted-foreground">
+                  Dërgo porosinë te Posta Cheetah menjëherë pas krijimit dhe ruaj kodin e gjurmimit.
+                </p>
+              </div>
+              <Switch checked={autoDispatch} onCheckedChange={setAutoDispatch} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
+                Ruaj Lidhjen
+              </Button>
+              <Button variant="outline" onClick={handleTest} disabled={testing || !username.trim() || !password}>
+                {testing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <PlugZap className="mr-2 size-4" />}
+                Testo Lidhjen
+              </Button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

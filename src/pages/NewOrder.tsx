@@ -1,6 +1,8 @@
 import { api } from "@/convex/_generated/api";
 import {
   COUNTRIES,
+  COUNTRY_FLAGS,
+  COUNTRY_LABELS,
   KOSOVO_CITIES,
   ALBANIAN_CITIES,
   MACEDONIAN_CITIES,
@@ -32,7 +34,10 @@ export default function NewOrder() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const hasGeminiKey = useQuery(api.appSettings.hasGeminiKey, {});
+  const publicSettings = useQuery(api.appSettings.getPublicSettings, {});
+  const cheetahConfig = useQuery(api.cheetah.getConfig, {});
   const createOrder = useMutation(api.orders.create);
+  const dispatchOrder = useAction(api.cheetah.dispatchOrder);
   const parseWithGemini = useAction(api.aiParser.parseWithGemini);
 
   // Catalog "Porosit Tani" pre-fill: /orders/new?product=:id
@@ -76,6 +81,28 @@ export default function NewOrder() {
   }, [form.country]);
 
   const autoTotal = form.productPrice + (form.postalFee || 0);
+
+  // Auto-prefill the postal fee when the country changes (only while the fee
+  // is still at its previous country default — never overwrite manual edits).
+  const lastCountryRef = useRef(form.country);
+  useEffect(() => {
+    if (!publicSettings) return;
+    const prev = lastCountryRef.current;
+    if (prev === form.country) return;
+    const prevRate = publicSettings.shippingRates[prev];
+    if (form.postalFee === prevRate || !form.postalFee) {
+      setForm((f) => ({
+        ...f,
+        country: form.country,
+        postalFee: publicSettings.shippingRates[form.country] ?? f.postalFee,
+        totalAmount: f.productPrice + (publicSettings.shippingRates[form.country] ?? f.postalFee),
+      }));
+    } else {
+      setForm((f) => ({ ...f, country: form.country }));
+    }
+    lastCountryRef.current = form.country;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.country, publicSettings]);
 
   const pickImage = (file: File | null | undefined) => {
     if (!file || !file.type.startsWith("image/")) { toast.error("Skedari duhet të jetë imazh."); return; }
@@ -156,7 +183,7 @@ export default function NewOrder() {
     if (!form.first_name || !form.phone) { toast.error("Plotësoni emrin dhe telefonin."); return; }
     setSaving(true);
     try {
-      await createOrder({
+      const orderId = await createOrder({
         first_name: form.first_name,
         last_name: form.last_name || undefined,
         phone: form.phone,
@@ -175,6 +202,23 @@ export default function NewOrder() {
         trackingBarcode: undefined,
       });
       toast.success("Porosia u regjistrua me sukses!");
+
+      // Auto-dispatch to Posta Cheetah when enabled in Settings.
+      if (cheetahConfig?.autoDispatch && cheetahConfig.hasCredentials) {
+        try {
+          const result = await dispatchOrder({ orderId });
+          if (result.ok) {
+            toast.success(result.trackingBarcode
+              ? `Dërgesa u krijua. Kodi i gjurmimit: ${result.trackingBarcode}`
+              : result.message);
+          } else {
+            toast.warning(`Porosia u ruajt, por dërgesa në postë dështoi: ${result.message}`);
+          }
+        } catch {
+          toast.warning("Porosia u ruajt, por dërgesa në postë dështoi.");
+        }
+      }
+
       navigate("/orders");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Regjistrimi dështoi.");
@@ -307,7 +351,7 @@ export default function NewOrder() {
                 <div className="space-y-1.5">
                   <Label>Shteti</Label>
                   <select value={form.country} onChange={s("country") as any} className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm">
-                    {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {COUNTRIES.map((c) => <option key={c} value={c}>{COUNTRY_FLAGS[c]} {COUNTRY_LABELS[c] ?? c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">

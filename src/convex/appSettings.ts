@@ -56,7 +56,7 @@ export const getPublicSettings = query({
 
 const DEFAULT_SHIPPING_RATES: Record<string, number> = {
   "Kosovë": 2.0,
-  "Shqipëri": 6.0,
+  "Shqipëri": 3.0,
   "Maqedoni": 3.0,
 };
 
