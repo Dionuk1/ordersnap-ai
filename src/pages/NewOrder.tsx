@@ -84,18 +84,23 @@ export default function NewOrder() {
 
   // Auto-prefill the postal fee when the country changes (only while the fee
   // is still at its previous country default — never overwrite manual edits).
+  // Safe against undefined/loading/error states: useQuery returns undefined
+  // while loading, and shippingRates may be absent — both fall back to the
+  // client-side defaults instead of crashing the page.
   const lastCountryRef = useRef(form.country);
   useEffect(() => {
-    if (!publicSettings) return;
+    if (!publicSettings?.shippingRates) return;
+    const rates = publicSettings.shippingRates;
     const prev = lastCountryRef.current;
     if (prev === form.country) return;
-    const prevRate = publicSettings.shippingRates[prev];
+    const prevRate = rates[prev];
     if (form.postalFee === prevRate || !form.postalFee) {
+      const newRate = rates[form.country] ?? 0;
       setForm((f) => ({
         ...f,
         country: form.country,
-        postalFee: publicSettings.shippingRates[form.country] ?? f.postalFee,
-        totalAmount: f.productPrice + (publicSettings.shippingRates[form.country] ?? f.postalFee),
+        postalFee: newRate,
+        totalAmount: f.productPrice + newRate,
       }));
     } else {
       setForm((f) => ({ ...f, country: form.country }));

@@ -188,7 +188,7 @@ function ShippingRatesSection() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (settings) {
+    if (settings?.shippingRates) {
       setRates({
         "Kosovë": String(settings.shippingRates["Kosovë"] ?? 2),
         "Shqipëri": String(settings.shippingRates["Shqipëri"] ?? 3),
