@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
+  Building2,
   Check,
   Eye,
   EyeOff,
@@ -26,6 +27,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 interface AuthProps {
   redirectAfterAuth?: string;
+  initialView?: "login" | "register";
 }
 
 /** "flladituks" | "FlladituKS" | full URL → "flladituks" */
@@ -71,7 +73,7 @@ function resolveRedirectAfterAuth(
   return fallback;
 }
 
-function Auth({ redirectAfterAuth }: AuthProps = {}) {
+function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,7 +89,16 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
   // Password reset flow: "forgot" = request code by email, "reset" = enter
   // the 6-digit code + the new password (typed twice).
-  const [view, setView] = useState<"login" | "forgot" | "reset">("login");
+  const [view, setView] = useState<
+    "login" | "forgot" | "reset" | "register"
+  >(initialView ?? "login");
+  // Company registration (sign-up) fields.
+  const [companyName, setCompanyName] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerConfirm, setRegisterConfirm] = useState("");
+  const [registerLoading, setRegisterLoading] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const createTenant = useMutation(api.tenants.upsert);
   const [resetCode, setResetCode] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
@@ -231,6 +242,57 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           : "Kyçja dështoi. Provoni përsëri.",
       );
       setIsLoading(false);
+    }
+  };
+
+  /**
+   * Company Admin registration: creates the auth account and initializes a
+   * new tenant store (slug derived from the company name) in one flow.
+   */
+  const handleSignUp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!companyName.trim()) {
+      setRegisterError("Shkruani emrin e kompanisë.");
+      return;
+    }
+    if (registerPassword !== registerConfirm) {
+      setRegisterError("Fjalëkalimet nuk përputhen.");
+      return;
+    }
+    setRegisterLoading(true);
+    setRegisterError(null);
+    try {
+      // 1) Create the auth account (Company Admin).
+      await signIn("password", {
+        email: emailTrimmed,
+        password: registerPassword,
+        flow: "signUp",
+      });
+      // 2) Initialize the tenant store with a slug derived from the name.
+      const slug = companyName
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "")
+        .slice(0, 30);
+      await createTenant({
+        slug,
+        name: companyName.trim(),
+        ownerEmail: emailTrimmed,
+        isActive: true,
+      });
+      toast.success("Llogaria e kompanisë u krijua. Mirë se vini!");
+      navigate(redirect);
+    } catch (err) {
+      setRegisterError(
+        err instanceof Error && err.message.includes("already")
+          ? "Ky email është i regjistruar tashmë. Provoni të kyçeni."
+          : err instanceof Error
+            ? err.message
+            : "Regjistrimi dështoi. Provoni përsëri.",
+      );
+      setRegisterLoading(false);
     }
   };
 
@@ -448,16 +510,20 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <h1 className="text-3xl font-bold tracking-tight">
                 {view === "login"
                   ? "Mirë se u ktheve"
-                  : view === "forgot"
-                    ? "Rivendos fjalëkalimin"
-                    : "Fjalëkalimi i ri"}
+                  : view === "register"
+                    ? "Krijo llogarinë e kompanisë"
+                    : view === "forgot"
+                      ? "Rivendos fjalëkalimin"
+                      : "Fjalëkalimi i ri"}
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {view === "login"
                   ? "Kyçu për të menaxhuar porositë, tracking dhe integrimet me postat."
-                  : view === "forgot"
-                    ? "Shkruani emailin e llogarisë suaj dhe do t'ju dërgojmë një kod rivendosjeje."
-                    : `Shkruani kodin e dërguar në ${emailTrimmed} dhe fjalëkalimin tuaj të ri.`}
+                  : view === "register"
+                    ? "Regjistro kompaninë tuaj — emri, emaili i adminit dhe fjalëkalimi."
+                    : view === "forgot"
+                      ? "Shkruani emailin e llogarisë suaj dhe do t'ju dërgojmë një kod rivendosjeje."
+                      : `Shkruani kodin e dërguar në ${emailTrimmed} dhe fjalëkalimin tuaj të ri.`}
               </p>
             </motion.div>
           )}
@@ -546,6 +612,117 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   Çdo llogari është Administrator i Kompanisë (Business
                   Tenant). Hyrja bëhet përmes linkut të dedikuar të kompanisë.
                 </p>
+
+                {/* Register link — centered, subtle gray + bold blue action */}
+                <p className="pt-1 text-center text-sm text-muted-foreground">
+                  Nuk keni llogari?{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegisterError(null);
+                      setView("register");
+                    }}
+                    className="cursor-pointer font-semibold text-blue-600 transition-colors hover:text-blue-700"
+                  >
+                    Regjistrohu
+                  </button>
+                </p>
+              </form>
+            )}
+
+            {view === "register" && (
+              <form onSubmit={handleSignUp} className="space-y-4">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="company-name"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Emri i Kompanisë
+                  </Label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="company-name"
+                      type="text"
+                      autoComplete="organization"
+                      placeholder="FlladituKS"
+                      className="h-11 rounded-xl border-border/80 pl-10 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      disabled={registerLoading}
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Linku i dedikuar do të jetë: {" "}
+                    <span className="font-medium text-foreground/80">
+                      /login?tenant={companyName
+                        .trim()
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")
+                        .replace(/[^a-z0-9]+/g, "")
+                        .slice(0, 30) || "kompania"}
+                    </span>
+                  </p>
+                </div>
+
+                {emailField("register-email")}
+                {passwordField("register-password", "new-password")}
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="register-confirm"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Përsërit fjalëkalimin
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="register-confirm"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      className="h-11 rounded-xl border-border/80 pl-10 pr-10 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+                      value={registerConfirm}
+                      onChange={(e) => setRegisterConfirm(e.target.value)}
+                      disabled={registerLoading}
+                      required
+                      minLength={8}
+                    />
+                  </div>
+                </div>
+
+                {registerError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {registerError}
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-base font-semibold text-white shadow-[0_8px_24px_-8px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-blue-600"
+                  disabled={registerLoading}
+                >
+                  {registerLoading ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : null}
+                  Krijo Llogarinë e Kompanisë
+                </Button>
+
+                <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                  Duke u regjistruar ju pranoni të jeni Administrator i
+                  Kompanisë (Business Tenant) në OrderSnap AI.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setView("login")}
+                  className="w-full cursor-pointer text-center text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
+                >
+                  ← Kthehu në hyrje
+                </button>
               </form>
             )}
 
