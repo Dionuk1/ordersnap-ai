@@ -411,6 +411,43 @@ export const platformStats = query({
   },
 });
 
+/**
+ * All registered company admins & system users (Super Admin only).
+ * Joins each user to its assigned tenant so the staff tab can show the
+ * company assignment alongside the system role.
+ */
+export const listAllUsers = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireSuperAdmin(ctx);
+
+    const [users, tenants] = await Promise.all([
+      ctx.db.query("users").collect(),
+      ctx.db.query("tenants").collect(),
+    ]);
+    const byId = new Map(tenants.map((t: any) => [t._id, t]));
+
+    return users
+      .filter((u: any) => !u.isAnonymous)
+      .sort((a: any, b: any) => b._creationTime - a._creationTime)
+      .map((u: any) => {
+        const tenant = u.activeTenantId ? byId.get(u.activeTenantId) : null;
+        return {
+          _id: u._id as string,
+          name: (u.name ?? null) as string | null,
+          email: (u.email ?? null) as string | null,
+          isSuperAdmin: (u.isSuperAdmin === true) as boolean,
+          role: (u.role ?? null) as string | null,
+          tenantId: (u.activeTenantId ?? null) as string | null,
+          tenantName: (tenant?.name ?? null) as string | null,
+          tenantSlug: (tenant?.slug ?? null) as string | null,
+          tenantStatus: (tenant?.status ?? null) as string | null,
+          createdAt: u._creationTime as number,
+        };
+      });
+  },
+});
+
 // ── Global System Config ────────────────────────────────────────────────────
 
 /** Super-admin view of global config keys (values masked where sensitive). */

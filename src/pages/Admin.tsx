@@ -647,7 +647,7 @@ function ConfigTab() {
 // ── Kredencialet & Stafi ────────────────────────────────────────────────────
 
 function StaffTab() {
-  const companies = useQuery(api.superAdmin.listCompanies, {});
+  const users = useQuery(api.superAdmin.listAllUsers, {});
   const setStatus = useMutation(api.superAdmin.setCompanyStatus);
   const impersonate = useMutation(api.superAdmin.impersonate);
   const generateTemp = useAction(api.superAdmin.generateTempPassword);
@@ -712,69 +712,86 @@ function StaffTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {companies === undefined ? (
+          {users === undefined ? (
             <div className="space-y-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : companies.length === 0 ? (
+          ) : users.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nuk ka staf të regjistruar.</p>
           ) : (
             <div className="space-y-2">
-              {companies.map((c) => (
+              {users.map((u) => (
                 <div
-                  key={c._id}
+                  key={u._id}
                   className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/20 px-3 py-3 transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{c.name}</p>
+                    <p className="truncate text-sm font-medium">
+                      {u.name ?? u.email ?? "Pa emër"}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {c.ownerEmail ?? "pa email"} · {c.slug}
+                      {u.email ?? "pa email"}
+                      {u.tenantName ? ` · ${u.tenantName}` : ""}
+                      {u.tenantSlug ? ` (${u.tenantSlug})` : ""}
                     </p>
                   </div>
-                  <Badge className={c.status === "suspended" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"}>
-                    {c.status === "suspended" ? "Pezulluar" : "Aktiv"}
-                  </Badge>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button
+                  {u.isSuperAdmin ? (
+                    <Badge className="bg-gradient-to-r from-blue-600 to-slate-900 text-white">
+                      Super Admin
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+                      Admin i Kompanisë
+                    </Badge>
+                  )}
+                  {u.tenantStatus === "suspended" && (
+                    <Badge
                       variant="outline"
-                      size="sm"
-                      onClick={() => openModal({ ownerId: c.ownerId, ownerEmail: c.ownerEmail, name: c.name })}
-                      disabled={!c.ownerId}
+                      className="border-rose-300 text-rose-600 dark:border-rose-500/40 dark:text-rose-300"
                     >
-                      <KeyRound className="mr-1 size-3.5" />
-                      Fjalëkalim
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        impersonate({ tenantId: c._id as never }).then(() => {
-                          toast.success(`Duke hyrë si "${c.name}"…`);
-                          window.location.href = "/dashboard";
-                        }).catch((err) => toast.error(err instanceof Error ? err.message : "Dështoi."))
-                      }
-                    >
-                      <LogIn className="mr-1 size-3.5" />
-                      Hyr si kompani
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={async () => {
-                        const next = c.status === "suspended" ? "active" : "suspended";
-                        try {
-                          await setStatus({ tenantId: c._id as never, status: next });
-                          toast.success(`"${c.name}" u ${next === "suspended" ? "pezullua" : "aktivizua"}.`);
-                        } catch (err) {
-                          toast.error(err instanceof Error ? err.message : "Dështoi.");
+                      Kompani e pezulluar
+                    </Badge>
+                  )}
+                  {!u.isSuperAdmin && (
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          openModal({
+                            ownerId: u._id,
+                            ownerEmail: u.email,
+                            name: u.name ?? u.email ?? "Staf",
+                          })
                         }
-                      }}
-                    >
-                      {c.status === "suspended" ? "Aktivizo" : "Pezullo"}
-                    </Button>
-                  </div>
+                        disabled={!u.email}
+                      >
+                        <KeyRound className="mr-1 size-3.5" />
+                        Fjalëkalim
+                      </Button>
+                      {u.tenantId && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            impersonate({ tenantId: u.tenantId as never })
+                              .then(() => {
+                                toast.success(`Duke hyrë si "${u.tenantName}"…`);
+                                window.location.href = "/dashboard";
+                              })
+                              .catch((err) =>
+                                toast.error(err instanceof Error ? err.message : "Dështoi."),
+                              )
+                          }
+                        >
+                          <LogIn className="mr-1 size-3.5" />
+                          Hyr si kompani
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
