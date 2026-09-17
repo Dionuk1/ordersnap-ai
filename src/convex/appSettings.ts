@@ -34,7 +34,7 @@ const FALLBACK_PUBLIC_SETTINGS = {
   courierProvider: "cheetah",
   shippingRates: {
     kosovo: 2.0,
-    shqiperi: 6.0,
+    shqiperi: 3.0,
     maqedoni: 3.0,
   } as Record<string, number>,
 };
@@ -86,7 +86,7 @@ export const getPublicSettings = query({
 
 const DEFAULT_SHIPPING_RATES: Record<string, number> = {
   kosovo: 2.0,
-  shqiperi: 6.0,
+  shqiperi: 3.0,
   maqedoni: 3.0,
 };
 

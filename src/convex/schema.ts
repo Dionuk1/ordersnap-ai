@@ -53,6 +53,11 @@ const schema = defineSchema(
       isActive: v.optional(v.boolean()),
       // "active" | "suspended" — controls whether the tenant can operate.
       status: v.optional(v.union(v.literal("active"), v.literal("suspended"))),
+      // SaaS billing: plan tier + monthly AI-parsing quota.
+      tier: v.optional(
+        v.union(v.literal("free_trial"), v.literal("pro"), v.literal("enterprise")),
+      ),
+      monthlyAiQuota: v.optional(v.number()),
       ownerEmail: v.optional(v.string()),
       createdBy: v.optional(v.id("users")),
     })

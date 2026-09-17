@@ -44,7 +44,7 @@ export const seedSuperAdmin = mutation({
 
     const anySuper = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("isSuperAdmin"), true))
+      .filter((q: any) => q.eq(q.field("isSuperAdmin"), true))
       .first();
     if (anySuper) return "already-seeded";
 
@@ -65,28 +65,49 @@ export const listCompanies = query({
     await requireSuperAdmin(ctx);
     const tenants = await ctx.db.query("tenants").collect();
     const users = await ctx.db.query("users").collect();
+    const orders = await ctx.db.query("orders").collect();
+
+    const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     return tenants
-      .sort((a, b) => b._creationTime - a._creationTime)
-      .map((t) => {
+      .sort((a: any, b: any) => b._creationTime - a._creationTime)
+      .map((t: any) => {
         const owner = users.find(
-          (u) => u.email && u.email.toLowerCase() === (t.ownerEmail ?? "").toLowerCase(),
+          (u: any) =>
+            u.email && u.email.toLowerCase() === (t.ownerEmail ?? "").toLowerCase(),
         );
+        // Per-tenant usage: AI-parsed orders in the last 30 days vs quota.
+        const aiParsed30d = orders.filter(
+          (o: any) =>
+            !o.deletedAt &&
+            (o.source === "gemini" || o.source === "local") &&
+            o.createdBy === owner?._id &&
+            o._creationTime > monthAgo,
+        ).length;
+
         return {
-          _id: t._id,
-          name: t.name,
-          slug: t.slug,
-          ownerEmail: t.ownerEmail ?? owner?.email ?? null,
-          status: t.status ?? (t.isActive === false ? "suspended" : "active"),
-          ownerId: owner?._id ?? null,
-          createdAt: t._creationTime,
+          _id: t._id as string,
+          name: t.name as string,
+          slug: t.slug as string,
+          ownerEmail: (t.ownerEmail ?? owner?.email ?? null) as string | null,
+          status: (t.status ?? (t.isActive === false ? "suspended" : "active")) as
+            | "active"
+            | "suspended",
+          ownerId: (owner?._id ?? null) as string | null,
+          tier: (t.tier ?? null) as string | null,
+          monthlyAiQuota: (t.monthlyAiQuota ?? null) as number | null,
+          aiParsed30d,
+          createdAt: t._creationTime as number,
         };
       });
   },
 });
 
 export const setCompanyStatus = mutation({
-  args: { tenantId: v.id("tenants"), status: v.union(v.literal("active"), v.literal("suspended")) },
+  args: {
+    tenantId: v.id("tenants"),
+    status: v.union(v.literal("active"), v.literal("suspended")),
+  },
   handler: async (ctx, { tenantId, status }) => {
     const user = await requireSuperAdmin(ctx);
     await ctx.db.patch(tenantId, {
@@ -95,10 +116,59 @@ export const setCompanyStatus = mutation({
     });
     await ctx.db.insert("audit_logs", {
       action: "superadmin.company_status",
-      details: `Kompania u ${
-        status === "suspended" ? "pezullua" : "aktivizua"
-      }.`,
+      details: `Kompania u ${status === "suspended" ? "pezullua" : "aktivizua"}.`,
       userId: user._id,
+      entityType: "tenant",
+      entityId: tenantId,
+    });
+  },
+});
+
+// ── SaaS Billing & Subscriptions ─────────────────────────────────────────────
+
+const TIER_QUOTAS: Record<string, number> = {
+  free_trial: 100,
+  pro: 1000,
+  enterprise: 10000,
+};
+
+/** Set a company's subscription tier; quota defaults to the tier's plan. */
+export const setCompanyTier = mutation({
+  args: {
+    tenantId: v.id("tenants"),
+    tier: v.union(
+      v.literal("free_trial"),
+      v.literal("pro"),
+      v.literal("enterprise"),
+    ),
+  },
+  handler: async (ctx, { tenantId, tier }) => {
+    const superAdmin = await requireSuperAdmin(ctx);
+    const quota = TIER_QUOTAS[tier] ?? 100;
+    await ctx.db.patch(tenantId, { tier, monthlyAiQuota: quota });
+    await ctx.db.insert("audit_logs", {
+      action: "superadmin.company_tier",
+      details: `Abonimi u ndryshua në "${tier}" (kuotë ${quota}/muaj).`,
+      userId: superAdmin._id,
+      entityType: "tenant",
+      entityId: tenantId,
+    });
+  },
+});
+
+/** Set a custom monthly AI-parsing quota for a tenant. */
+export const setCompanyQuota = mutation({
+  args: { tenantId: v.id("tenants"), monthlyAiQuota: v.number() },
+  handler: async (ctx, { tenantId, monthlyAiQuota }) => {
+    const superAdmin = await requireSuperAdmin(ctx);
+    if (!Number.isFinite(monthlyAiQuota) || monthlyAiQuota < 0) {
+      throw new Error("Kuota duhet të jetë numër jo-negativ.");
+    }
+    await ctx.db.patch(tenantId, { monthlyAiQuota });
+    await ctx.db.insert("audit_logs", {
+      action: "superadmin.company_quota",
+      details: `Kuota mujore e AI u vendos në ${monthlyAiQuota}.`,
+      userId: superAdmin._id,
       entityType: "tenant",
       entityId: tenantId,
     });
@@ -107,11 +177,7 @@ export const setCompanyStatus = mutation({
 
 // ── Credential Management ───────────────────────────────────────────────────
 
-/**
- * Generate a secure temporary password. Runs as an action so the same logic
- * could later call an external auth API; here we generate client-independently
- * and apply via applyTempPassword mutation below.
- */
+/** Generate a secure temporary password (Super Admin only). */
 export const generateTempPassword = action({
   args: {},
   handler: async (): Promise<string> => {
@@ -124,12 +190,7 @@ export const generateTempPassword = action({
   },
 });
 
-/**
- * Store the generated temp password (hashed conceptually — here we record it
- * as an audit entry and mark the target admin's "must change" flag). The
- * password itself is applied by Convex Auth's Password provider in a follow-up
- * sign-in flow; until then we persist it encrypted-at-rest by Convex.
- */
+/** Record a generated temp password for a company admin (audit-trailed). */
 export const applyTempPassword = mutation({
   args: {
     userId: v.id("users"),
@@ -166,6 +227,108 @@ export const logResetEmail = mutation({
       userId: superAdmin._id,
       entityType: "user",
       entityId: userId,
+    });
+  },
+});
+
+// ── Audit Trail (Super Admin view) ──────────────────────────────────────────
+
+/** All administrative actions with timestamps and actor names. */
+export const auditTrail = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    await requireSuperAdmin(ctx);
+    const rows = await ctx.db.query("audit_logs").order("desc").take(limit ?? 100);
+    const users = await ctx.db.query("users").collect();
+    return rows.map((log: any) => ({
+      _id: log._id as string,
+      action: log.action as string,
+      details: log.details as string,
+      entityType: (log.entityType ?? null) as string | null,
+      entityId: (log.entityId ?? null) as string | null,
+      actor: (() => {
+        const u = users.find((x: any) => x._id === log.userId);
+        return (u?.name ?? u?.email ?? null) as string | null;
+      })(),
+      _creationTime: log._creationTime as number,
+    }));
+  },
+});
+
+// ── Global Courier API Credentials ──────────────────────────────────────────
+
+/** Shared app_settings upsert (canonical keys are always ASCII). */
+async function upsertAppSetting(ctx: any, key: string, value: string, adminId: any) {
+  const existing = await ctx.db
+    .query("app_settings")
+    .withIndex("by_key", (q: any) => q.eq("key", key))
+    .first();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      value,
+      updatedBy: adminId,
+      updatedAt: Date.now(),
+    });
+  } else {
+    await ctx.db.insert("app_settings", {
+      key,
+      value,
+      updatedBy: adminId,
+      updatedAt: Date.now(),
+    });
+  }
+}
+
+/** Masked view of global courier credentials (Super Admin only). */
+export const getCourierGlobalConfig = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireSuperAdmin(ctx);
+    const read = async (key: string) => {
+      const row = await ctx.db
+        .query("app_settings")
+        .withIndex("by_key", (q: any) => q.eq("key", key))
+        .first();
+      return (row?.value ?? null) as string | null;
+    };
+    const apiUrl = await read("courier_api_url");
+    const username = await read("courier_api_username");
+    const password = await read("courier_api_password");
+    return {
+      apiUrl,
+      username,
+      hasPassword: Boolean(password),
+    };
+  },
+});
+
+/** Upsert global courier credentials (Super Admin only). */
+export const setCourierGlobalConfig = mutation({
+  args: {
+    apiUrl: v.optional(v.string()),
+    username: v.optional(v.string()),
+    password: v.optional(v.string()),
+  },
+  handler: async (ctx, { apiUrl, username, password }) => {
+    const superAdmin = await requireSuperAdmin(ctx);
+    const updates: { key: string; value: string }[] = [];
+    if (apiUrl !== undefined) {
+      updates.push({ key: "courier_api_url", value: apiUrl.trim() });
+    }
+    if (username !== undefined) {
+      updates.push({ key: "courier_api_username", value: username.trim() });
+    }
+    if (password !== undefined && password !== "") {
+      updates.push({ key: "courier_api_password", value: password });
+    }
+    for (const { key, value } of updates) {
+      await upsertAppSetting(ctx, key, value, superAdmin._id);
+    }
+    await ctx.db.insert("audit_logs", {
+      action: "superadmin.courier_config",
+      details: "Kredencialet globale të postës u përditësuan.",
+      userId: superAdmin._id,
+      entityType: "app_settings",
     });
   },
 });
@@ -221,26 +384,26 @@ export const platformStats = query({
 
     const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const activeMonthlyAdmins = users.filter(
-      (u) =>
+      (u: any) =>
         !u.isAnonymous &&
         u.isSuperAdmin !== true &&
         u._creationTime > monthAgo - 365 * 24 * 60 * 60 * 1000,
     ).length;
 
     const aiParsed = orders.filter(
-      (o) => o.source === "gemini" || o.source === "local",
+      (o: any) => o.source === "gemini" || o.source === "local",
     ).length;
 
     return {
       totalStores: tenants.length,
       activeStores: tenants.filter(
-        (t) => t.status !== "suspended" && t.isActive !== false,
+        (t: any) => t.status !== "suspended" && t.isActive !== false,
       ).length,
       suspendedStores: tenants.filter(
-        (t) => t.status === "suspended" || t.isActive === false,
+        (t: any) => t.status === "suspended" || t.isActive === false,
       ).length,
-      totalUsers: users.filter((u) => !u.isAnonymous).length,
-      totalOrders: orders.filter((o) => !o.deletedAt).length,
+      totalUsers: users.filter((u: any) => !u.isAnonymous).length,
+      totalOrders: orders.filter((o: any) => !o.deletedAt).length,
       aiParsedOrders: aiParsed,
       activeMonthlyAdmins,
       auditEvents: logs.length,
@@ -257,10 +420,10 @@ export const getGlobalConfig = query({
     await requireSuperAdmin(ctx);
     // (key, as): `key` is the storage key to read; `as` is the ASCII-safe
     // field name used in the response — the result map is keyed by these
-    // names, and Convex rejects non-ASCII object field names (the same
-    // serializer rule that broke getPublicSettings).
+    // names, and Convex rejects non-ASCII object field names.
     const keys: { key: string; as: string }[] = [
       { key: "gemini_api_key", as: "gemini_api_key" },
+      // Canonical ASCII rate keys (write/read source of truth).
       { key: "shipping_rate_kosovo", as: "shipping_rate_kosovo" },
       { key: "shipping_rate_shqiperi", as: "shipping_rate_shqiperi" },
       { key: "shipping_rate_maqedoni", as: "shipping_rate_maqedoni" },
@@ -273,7 +436,7 @@ export const getGlobalConfig = query({
     for (const { key, as } of keys) {
       const row = await ctx.db
         .query("app_settings")
-        .withIndex("by_key", (q) => q.eq("key", key))
+        .withIndex("by_key", (q: any) => q.eq("key", key))
         .first();
       if (!row?.value) {
         config[as] = null;
@@ -292,24 +455,7 @@ export const setGlobalConfig = mutation({
   args: { key: v.string(), value: v.string() },
   handler: async (ctx, { key, value }) => {
     const superAdmin = await requireSuperAdmin(ctx);
-    const existing = await ctx.db
-      .query("app_settings")
-      .withIndex("by_key", (q) => q.eq("key", key))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        value,
-        updatedBy: superAdmin._id,
-        updatedAt: Date.now(),
-      });
-    } else {
-      await ctx.db.insert("app_settings", {
-        key,
-        value,
-        updatedBy: superAdmin._id,
-        updatedAt: Date.now(),
-      });
-    }
+    await upsertAppSetting(ctx, key, value, superAdmin._id);
     await ctx.db.insert("audit_logs", {
       action: "superadmin.config_updated",
       details: `Konfigurimi global "${key}" u përditësua.`,
@@ -320,6 +466,7 @@ export const setGlobalConfig = mutation({
   },
 });
 
-// Keep action import used (future: server-side reset via HTTP endpoint).
+// Keep imports used (future: server-side reset via HTTP endpoint).
 void api;
 void getCurrentUserSafe;
+void isAdminUser;

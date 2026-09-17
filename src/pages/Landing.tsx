@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import logo from "@/assets/logo.svg";
+import { ThemeToggle } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -83,6 +84,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button variant="ghost" asChild>
               <Link to="/login">Kyçuni</Link>
             </Button>

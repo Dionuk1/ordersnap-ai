@@ -61,7 +61,7 @@ export const COUNTRY_LABELS: Record<string, string> = {
 // canonical ASCII fields below; the diacritic labels (Kosovë…) are UI-only.
 export const DEFAULT_SHIPPING_RATES: Record<string, number> = {
   kosovo: 2.0,
-  shqiperi: 6.0,
+  shqiperi: 3.0,
   maqedoni: 3.0,
 };
 

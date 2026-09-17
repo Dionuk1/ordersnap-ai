@@ -134,4 +134,38 @@
       0 1px 2px 0 oklch(0.2 0.02 265 / 0.04),
       0 4px 16px -4px oklch(0.2 0.02 265 / 0.06);
   }
+
+  /* Glassmorphism surfaces — translucent panel + blur + hairline border.
+     Light mode: frosted white; dark mode: deep slate tint. */
+  .glass {
+    background: color-mix(in oklab, var(--card) 72%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-color: var(--border);
+  }
+
+  .glass-strong {
+    background: color-mix(in oklab, var(--card) 88%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-color: var(--border);
+  }
+
+  /* Subtle top-edge glow for premium cards / portal chrome */
+  .edge-glow {
+    position: relative;
+  }
+  .edge-glow::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--primary) 55%, transparent),
+      transparent
+    );
+    pointer-events: none;
+  }
 }
