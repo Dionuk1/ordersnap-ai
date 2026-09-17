@@ -1,21 +1,14 @@
-import { Button } from "@/components/ui/button";
+import { useMutation, useQuery } from "convex/react";
+import { motion } from "framer-motion";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-import { useAuth } from "@/hooks/use-auth";
-import { api } from "@/convex/_generated/api";
-import logo from "@/assets/logo.svg";
-import { Eye, EyeOff, Loader2, Lock, Mail, User } from "lucide-react";
-import { Suspense, useState } from "react";
-import { useMutation } from "convex/react";
+  Building2,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+} from "lucide-react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   useNavigate,
@@ -23,8 +16,27 @@ import {
 } from "react-router";
 import { toast } from "sonner";
 
+import { api } from "@/convex/_generated/api";
+import logo from "@/assets/logo.svg";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
+
 interface AuthProps {
   redirectAfterAuth?: string;
+}
+
+/** "flladituks" | "FlladituKS" | full URL → "flladituks" */
+function normalizeTenantSlug(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .split(/[/?#]/)[0]
+    .replace(/.*tenant=/, "")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/^-+|-+$/g, "");
 }
 
 function resolveRedirectAfterAuth(
@@ -40,20 +52,91 @@ function resolveRedirectAfterAuth(
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
-  const claimFirstAdmin = useMutation(api.staff.claimFirstAdmin);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const boundRef = useRef(false);
+
   const redirect = resolveRedirectAfterAuth(
     searchParams.get("returnTo"),
     redirectAfterAuth,
   );
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
 
-  // Redirect if already signed in
-  if (!authLoading && isAuthenticated && typeof window !== "undefined") {
-    navigate(redirect);
-  }
+  // ── 1. Multi-tenant URL routing: /login?tenant={slug} ──────────────────
+  const tenantSlugParam = searchParams.get("tenant");
+  const normalizedSlug = tenantSlugParam ? normalizeTenantSlug(tenantSlugParam) : "";
+
+  const tenant = useQuery(
+    api.tenants.getBySlug,
+    normalizedSlug ? { slug: normalizedSlug } : "skip",
+  );
+  const tenantResolved = normalizedSlug !== "" && tenant !== undefined;
+  const isTenantMode = normalizedSlug !== "";
+  const tenantName = tenant?.name ?? null;
+  const tenantInitials = tenantName
+    ? tenantName
+        .split(/\s+/)
+        .map((w) => w[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "";
+  const tenantSubtitle = tenant?.subtitle ?? "Hyr në llogarinë tënde";
+  const tenantLogoUrl = tenant?.logoUrl ?? null;
+  const accent = tenant?.accentColor ?? "#7c5cfc";
+
+  // ── 2. Data scope injection: bind workspace to resolved tenant ─────────
+  const setActiveTenant = useMutation(api.tenants.setActiveTenant);
+  useEffect(() => {
+    if (!isAuthenticated || !tenantResolved || !tenant?._id || boundRef.current)
+      return;
+    boundRef.current = true;
+    setActiveTenant({ tenantId: tenant._id }).catch((err) => {
+      toast.error(
+        err instanceof Error ? err.message : "Lidhja me kompaninë dështoi.",
+      );
+    });
+  }, [isAuthenticated, tenantResolved, tenant?._id, setActiveTenant]);
+
+  // Seed the demo tenant once so /login?tenant=flladituks works out of the box.
+  const ensureDemoTenant = useMutation(api.tenants.ensureDemoTenant);
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    ensureDemoTenant().catch(() => {
+      // Non-fatal — an invalid tenant slug still falls back gracefully.
+    });
+  }, [ensureDemoTenant]);
+
+  // ── 3. Invalid slug → friendly toast + graceful fallback ──────────────
+  const fallbackDoneRef = useRef(false);
+  useEffect(() => {
+    if (
+      isTenantMode &&
+      tenantResolved &&
+      tenant === null &&
+      !fallbackDoneRef.current
+    ) {
+      fallbackDoneRef.current = true;
+      toast.error("Kompania nuk u gjet", {
+        description: "Dukeju kthyer në hyrjen standarde…",
+      });
+      const t = setTimeout(() => {
+        navigate("/login", { replace: true });
+      }, 1400);
+      return () => clearTimeout(t);
+    }
+  }, [isTenantMode, tenantResolved, tenant, navigate]);
+
+  // Sign-in page auto-redirect when already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate(redirect, { replace: true });
+    }
+  }, [authLoading, isAuthenticated, navigate, redirect]);
 
   const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -66,6 +149,14 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         password: String(formData.get("password") ?? ""),
         flow: "signIn",
       });
+      // Bind the active workspace to the resolved tenant before redirecting.
+      if (tenant?._id) {
+        try {
+          await setActiveTenant({ tenantId: tenant._id });
+        } catch {
+          // Non-fatal: workspace binding is a safety net, not a blocker.
+        }
+      }
       navigate(redirect);
     } catch (err) {
       setError(
@@ -77,47 +168,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  const handleSignUp = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const formData = new FormData(event.currentTarget);
-      const name = String(formData.get("name") ?? "");
-      const email = String(formData.get("email") ?? "");
-      const password = String(formData.get("password") ?? "");
-      await signIn("password", {
-        email,
-        password,
-        name,
-        flow: "signUp",
-      });
-      // The very first registered user becomes the admin
-      try {
-        await claimFirstAdmin({});
-      } catch {
-        // non-fatal
-      }
-      navigate(redirect);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      setError(
-        msg.includes("exists") || msg.includes("duplicate")
-          ? "Ky email është i regjistruar tashmë. Provoni të kyçeni."
-          : msg.includes("8")
-            ? "Fjalëkalimi duhet të ketë të paktën 8 karaktere."
-            : "Regjistrimi dështoi. Provoni përsëri.",
-      );
-      setIsLoading(false);
-    }
-  };
-
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError(null);
     try {
       await signIn("google");
-      // OAuth redirects the page; nothing else to do
     } catch {
       setError(
         "Kyçja me Google nuk është e konfiguruar. Përdorni email & fjalëkalim.",
@@ -126,48 +181,45 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  const passwordFields = (keyPrefix: string, withName = false) => (
+  const passwordFields = (idPrefix: string) => (
     <>
-      {withName && (
-        <div className="space-y-1.5">
-          <Label htmlFor={`${keyPrefix}-name`}>Emri</Label>
-          <div className="relative">
-            <User className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-            <Input
-              id={`${keyPrefix}-name`}
-              name="name"
-              placeholder="Emri juaj"
-              className="pl-9"
-              disabled={isLoading}
-            />
-          </div>
-        </div>
-      )}
-      <div className="space-y-1.5">
-        <Label htmlFor={`${keyPrefix}-email`}>Email</Label>
+      <div className="space-y-2">
+        <Label
+          htmlFor={`${idPrefix}-email`}
+          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          Email Adresa
+        </Label>
         <div className="relative">
-          <Mail className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+          <Mail className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            id={`${keyPrefix}-email`}
+            id={`${idPrefix}-email`}
             name="email"
             type="email"
+            autoComplete="email"
             placeholder="emri@shembull.com"
-            className="pl-9"
+            className="h-11 rounded-xl pl-10"
             disabled={isLoading}
             required
           />
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor={`${keyPrefix}-password`}>Fjalëkalimi</Label>
+      <div className="space-y-2">
+        <Label
+          htmlFor={`${idPrefix}-password`}
+          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          Fjalëkalimi
+        </Label>
         <div className="relative">
-          <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+          <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            id={`${keyPrefix}-password`}
+            id={`${idPrefix}-password`}
             name="password"
             type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
             placeholder="••••••••"
-            className="pl-9 pr-10"
+            className="h-11 rounded-xl pl-10 pr-10"
             disabled={isLoading}
             required
             minLength={8}
@@ -175,8 +227,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           <button
             type="button"
             onClick={() => setShowPassword((s) => !s)}
-            className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
             tabIndex={-1}
+            aria-label={
+              showPassword ? "Fshih fjalëkalimin" : "Shfaq fjalëkalimin"
+            }
           >
             {showPassword ? (
               <EyeOff className="size-4" />
@@ -189,127 +244,172 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     </>
   );
 
+  const checkbox = (
+    <label
+      htmlFor="remember-me"
+      className="flex cursor-pointer select-none items-center gap-2 text-sm text-foreground/80"
+    >
+      <input
+        id="remember-me"
+        type="checkbox"
+        checked={rememberMe}
+        onChange={(e) => setRememberMe(e.target.checked)}
+        className="size-4 cursor-pointer accent-primary"
+      />
+      Më mbaj mend
+    </label>
+  );
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md">
-          <div className="mb-8 flex flex-col items-center text-center">
-            <Link to="/">
-              <img
-                src={logo}
-                alt="OrderSnap AI"
-                width={56}
-                height={56}
-                className="mb-4 size-14 rounded-xl"
-              />
-            </Link>
-            <h1 className="text-2xl font-bold tracking-tight">OrderSnap AI</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Sistemi i Menaxhimit të Porosive dhe Automatizimit me AI
-            </p>
-          </div>
-
-          <Card className="border-border/60 shadow-xl shadow-black/5">
-            <Tabs defaultValue="login">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login">Kyçuni</TabsTrigger>
-                <TabsTrigger value="register">Regjistrohu</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="login">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Mirë se vini përsëri</CardTitle>
-                  <CardDescription>
-                    Kyçuni me email dhe fjalëkalimin tuaj.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <form onSubmit={handleSignIn} className="space-y-4">
-                    {passwordFields("login")}
-                    {error && (
-                      <p className="text-sm text-destructive">{error}</p>
-                    )}
-                    <Button type="submit" className="w-full" disabled={isLoading}>
-                      {isLoading ? (
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                      ) : null}
-                      Kyçuni
-                    </Button>
-                  </form>
-
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
+          {/* Branded tenant header replaces the generic logo + tabs view */}
+          {isTenantMode ? (
+            <motion.div
+              key={normalizedSlug}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="mb-8 flex flex-col items-center text-center"
+            >
+              {tenantResolved && tenant ? (
+                <>
+                  {tenantLogoUrl ? (
+                    <img
+                      src={tenantLogoUrl}
+                      alt={tenantName ?? "Logo"}
+                      width={64}
+                      height={64}
+                      className="mb-4 size-16 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="mb-4 flex size-16 items-center justify-center rounded-2xl text-xl font-bold tracking-tight text-white"
+                      style={{
+                        backgroundColor: accent,
+                        boxShadow: `0 12px 32px -12px ${accent}80`,
+                      }}
+                    >
+                      {tenantInitials}
                     </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">
-                        ose
-                      </span>
-                    </div>
-                  </div>
+                  )}
+                  <h1 className="text-3xl font-bold tracking-tight">
+                    {tenantName}
+                  </h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {tenantSubtitle}
+                  </p>
+                </>
+              ) : (
+                <Loader2 className="my-4 size-8 animate-spin text-muted-foreground" />
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="mb-8 flex flex-col items-center text-center"
+            >
+              <Link to="/">
+                <img
+                  src={logo}
+                  alt="OrderSnap AI"
+                  width={64}
+                  height={64}
+                  className="mb-4 size-16 rounded-2xl"
+                />
+              </Link>
+              <h1 className="text-3xl font-bold tracking-tight">
+                Mirë se u ktheve
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Kyçu për të menaxhuar porositë, tracking dhe integrimet me
+                postat.
+              </p>
+            </motion.div>
+          )}
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleGoogleSignIn}
-                    disabled={isLoading}
-                  >
-                    <GoogleIcon />
-                    Kyçuni me Google
-                  </Button>
-                </CardContent>
-              </TabsContent>
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.08, ease: "easeOut" }}
+            className="rounded-2xl border bg-card p-6"
+          >
+            <form onSubmit={handleSignIn} className="space-y-4">
+              {passwordFields("login")}
 
-              <TabsContent value="register">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Krijo llogari</CardTitle>
-                  <CardDescription>
-                    Regjistrohu për të filluar menaxhimin e porosive me AI.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <form onSubmit={handleSignUp} className="space-y-4">
-                    {passwordFields("register", true)}
-                    {error && (
-                      <p className="text-sm text-destructive">{error}</p>
-                    )}
-                    <Button type="submit" className="w-full" disabled={isLoading}>
-                      {isLoading ? (
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                      ) : null}
-                      Regjistrohu
-                    </Button>
-                  </form>
+              {error && (
+                <p className="text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              )}
 
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">
-                        ose
-                      </span>
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between pt-1">
+                {checkbox}
+                <button
+                  type="button"
+                  onClick={() =>
+                    toast.info(
+                      "Kontaktoni administratorin e kompanisë suaj për të rivendosur fjalëkalimin.",
+                    )
+                  }
+                  className="cursor-pointer text-sm text-muted-foreground transition-colors hover:text-primary"
+                >
+                  Keni harruar fjalëkalimin?
+                </button>
+              </div>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleGoogleSignIn}
-                    disabled={isLoading}
-                  >
-                    <GoogleIcon />
-                    Regjistrohu me Google
-                  </Button>
-                </CardContent>
-              </TabsContent>
-            </Tabs>
-          </Card>
+              {/* Tenant slug resolver — only on the global login */}
+              {!isTenantMode && <TenantLinkSection />}
 
-          <p className="mt-6 text-center text-xs text-muted-foreground">
-            duke vazhduar ju pranoni kushtet e përdorimit të OrderSnap AI.
+              <Button
+                type="submit"
+                className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : null}
+                Hyr në Llogari
+              </Button>
+            </form>
+
+            {/* Bottom "back to normal login" link in tenant mode */}
+            {isTenantMode && (
+              <div className="mt-5 border-t pt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams);
+                    params.delete("tenant");
+                    setSearchParams(params, { replace: true });
+                  }}
+                  className="cursor-pointer text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
+                >
+                  ← Faqja e zakonshme e hyrjes
+                </button>
+              </div>
+            )}
+          </motion.div>
+
+          <p
+            className="mt-6 text-center text-xs text-muted-foreground"
+          >
+            {isTenantMode ? (
+              <>
+                Mundësuar nga{" "}
+                <Link
+                  to="/"
+                  className="font-medium underline decoration-border underline-offset-2 hover:text-foreground"
+                >
+                  OrderSnap AI
+                </Link>
+              </>
+            ) : (
+              "Mundësuar nga OrderSnap AI"
+            )}
           </p>
         </div>
       </div>
@@ -317,32 +417,70 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   );
 }
 
-function GoogleIcon() {
+/** "Hyr nga linku i dedikuar i kompanisë suaj" — slug resolver card (screenshot 1). */
+function TenantLinkSection() {
+  const [slugInput, setSlugInput] = useState("");
+  const navigate = useNavigate();
+  const previewUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/login?tenant=flladituks`
+      : "https://dergesa.app/login?tenant=flladituks";
+
+  const handleGo = () => {
+    const slug = normalizeTenantSlug(slugInput);
+    if (!slug) {
+      toast.error("Shkruani slug-un e kompanisë (p.sh. flladituks).");
+      return;
+    }
+    navigate(`/login?tenant=${encodeURIComponent(slug)}`);
+  };
+
   return (
-    <svg className="mr-2 size-4" viewBox="0 0 24 24" aria-hidden>
-      <path
-        fill="#4285F4"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18A10.96 10.96 0 0 0 1 12c0 1.77.43 3.45 1.18 4.94l3.66-2.84z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-      />
-    </svg>
+    <motion.div
+      layout
+      initial={false}
+      className="rounded-xl border bg-muted/40 p-4"
+    >
+      <p className="text-sm font-medium text-foreground/90">
+        Hyr nga linku i dedikuar i kompanisë suaj:
+      </p>
+      <div className="relative mt-3">
+        <Building2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={slugInput}
+          onChange={(e) => setSlugInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleGo();
+            }
+          }}
+          placeholder="flladituks"
+          className="h-10 rounded-lg pl-9 text-sm"
+          aria-label="Slug i kompanisë"
+        />
+      </div>
+      <Button
+        type="button"
+        className="mt-2.5 h-10 w-full rounded-lg bg-blue-600 text-sm font-medium hover:bg-blue-600/90"
+        onClick={handleGo}
+      >
+        Hyr nga linku i kompanisë →
+      </Button>
+      <button
+        type="button"
+        onClick={() => navigate("/login?tenant=flladituks")}
+        className="mt-2 w-full cursor-pointer text-center text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+      >
+        {previewUrl}
+      </button>
+    </motion.div>
   );
 }
 
 export default function AuthPage(props: AuthProps) {
   return (
-    <Suspense>
+    <Suspense fallback={null}>
       <Auth {...props} />
     </Suspense>
   );

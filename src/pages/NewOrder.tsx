@@ -1,7 +1,13 @@
 import { api } from "@/convex/_generated/api";
-import type { ParsedOrder } from "@/lib/order-types";
-import { EMPTY_PARSED_ORDER, parseOrderTextLocal } from "@/lib/local-parser";
-import { COUNTRIES, KOSOVO_CITIES, ALBANIAN_CITIES, MACEDONIAN_CITIES } from "@/lib/order-types";
+import {
+  COUNTRIES,
+  KOSOVO_CITIES,
+  ALBANIAN_CITIES,
+  MACEDONIAN_CITIES,
+  EMPTY_PARSED_ORDER,
+  type ParsedOrder,
+} from "@/lib/order-types";
+import { parseOrderTextLocal } from "@/lib/local-parser";
 import { fileToBase64, runOcr } from "@/lib/ocr";
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
@@ -102,18 +108,18 @@ export default function NewOrder() {
         setOcrText(text);
         const parsed = parseOrderTextLocal(text);
         setForm({
-          first_name: parsed.full_name?.split(" ")[0] ?? "",
-          last_name: parsed.full_name?.split(" ").slice(1).join(" ") ?? "",
-          phone: parsed.phone_number ?? "",
+          first_name: parsed.first_name,
+          last_name: parsed.last_name,
+          phone: parsed.phone,
           instagram: "",
-          city: parsed.city ?? "",
-          address: parsed.address ?? "",
+          city: parsed.city,
+          address: parsed.address,
           addressDetails: "",
           country: "Kosovë",
-          productDescription: parsed.product_notes ?? "",
-          productPrice: parsed.total_amount ?? 0,
+          productDescription: parsed.productDescription,
+          productPrice: parsed.totalAmount ?? 0,
           postalFee: 0,
-          totalAmount: parsed.total_amount ?? 0,
+          totalAmount: parsed.totalAmount ?? 0,
           deliveryOpen: false,
           deliveryExchange: false,
         });

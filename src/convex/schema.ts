@@ -39,7 +39,19 @@ const schema = defineSchema(
       emailVerificationTime: v.optional(v.number()),
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
+      activeTenantId: v.optional(v.id("tenants")),
     }).index("email", ["email"]),
+
+    // Multi-tenant workspaces resolved via /login?tenant={slug}
+    tenants: defineTable({
+      slug: v.string(),
+      name: v.string(),
+      subtitle: v.optional(v.string()),
+      logoUrl: v.optional(v.string()),
+      accentColor: v.optional(v.string()),
+      isActive: v.optional(v.boolean()),
+      createdBy: v.optional(v.id("users")),
+    }).index("by_slug", ["slug"]),
 
     app_settings: defineTable({
       key: v.string(),

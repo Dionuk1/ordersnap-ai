@@ -15,6 +15,10 @@ export interface ParsedOrder {
   deliveryExchange: boolean;
 }
 
+// ------------------- Kosovo-first defaults -------------------
+const _KOSOVO_DEFAULT = "Kosovë";
+export const KOSOVO_DEFAULT = _KOSOVO_DEFAULT;
+
 export const EMPTY_PARSED_ORDER: ParsedOrder = {
   first_name: "",
   last_name: "",
@@ -23,7 +27,7 @@ export const EMPTY_PARSED_ORDER: ParsedOrder = {
   city: "",
   address: "",
   addressDetails: "",
-  country: _KOSOVO_DEFAULT,
+  country: KOSOVO_DEFAULT,
   productDescription: "",
   productPrice: 0,
   postalFee: 0,
@@ -31,10 +35,6 @@ export const EMPTY_PARSED_ORDER: ParsedOrder = {
   deliveryOpen: false,
   deliveryExchange: false,
 };
-
-// ------------------- Kosovo-first defaults -------------------
-const _KOSOVO_DEFAULT = "Kosovë";
-export const KOSOVO_DEFAULT = _KOSOVO_DEFAULT;
 
 // Country list used in order forms and settings. Kosovo is always first.
 export const COUNTRIES = [

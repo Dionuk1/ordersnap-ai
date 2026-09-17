@@ -84,10 +84,10 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" asChild>
-              <Link to="/auth">Kyçuni</Link>
+              <Link to="/login">Kyçuni</Link>
             </Button>
             <Button asChild>
-              <Link to="/auth">
+              <Link to="/login">
                 Fillo tani
                 <ArrowRight className="ml-1 size-4" />
               </Link>
@@ -122,13 +122,13 @@ export default function Landing() {
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Button size="lg" asChild>
-              <Link to="/auth">
+              <Link to="/login">
                 Provoni falas
                 <ArrowRight className="ml-2 size-4" />
               </Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link to="/auth?tab=register">Krijo llogari</Link>
+              <Link to="/login?tab=register">Krijo llogari</Link>
             </Button>
           </div>
 
@@ -227,7 +227,7 @@ export default function Landing() {
             Regjistrohu në minuta dhe kthe screenshotet e para në porosi sot.
           </p>
           <Button size="lg" className="mt-8" asChild>
-            <Link to="/auth">
+            <Link to="/login">
               <KeyRound className="mr-2 size-4" />
               Hap llogarinë tuaj
             </Link>
