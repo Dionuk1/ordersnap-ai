@@ -456,7 +456,7 @@ function StaffSection() {
         <CardTitle className="text-base">Menaxhimi i Kompanive</CardTitle>
         <CardDescription>
           Çdo llogari është Administrator i Kompanisë me qasje të plotë te
-          porositë, katalogu dhe konfigurimet e biznesit të vet.
+          porositë dhe konfigurimet e biznesit të vet.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Package,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -20,7 +19,6 @@ import { Link, useLocation, useNavigate } from "react-router";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
-  { to: "/catalog", label: "Katalogu", icon: Package, adminOnly: false },
   { to: "/orders/new", label: "Porosi e Re", icon: Sparkles, adminOnly: false },
   { to: "/orders", label: "Porositë", icon: ClipboardList, adminOnly: false },
   { to: "/more", label: "Më shumë", icon: Ellipsis, adminOnly: false },
@@ -50,9 +48,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (to === "/admin") return location.pathname.startsWith("/admin");
     if (to === "/more") return location.pathname.startsWith("/more");
     if (to === "/orders/new") return location.pathname === "/orders/new";
-    if (to === "/catalog") {
-      return location.pathname.startsWith("/catalog");
-    }
     if (to === "/orders") {
       return (
         location.pathname === "/orders" ||

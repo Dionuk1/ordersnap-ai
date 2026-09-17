@@ -20,44 +20,37 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
-  AlertTriangle, Bot, ImageUp, Keyboard, Loader2, Package, RotateCcw,
+  AlertTriangle, Bot, ImageUp, Loader2, Package, RotateCcw,
   Save, ScanText, Sparkles, User, X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 type Engine = "gemini" | "local" | null;
 type CreateMode = "screenshot" | "manual";
 
+/**
+ * Absolute client-side settings fallback — mirrors the server's zero-throw
+ * default. useQuery returns undefined while loading (and on query errors);
+ * this object guarantees the component tree never sees a missing shape.
+ */
+const DEFAULT_APP_SETTINGS = {
+  hasGeminiKey: false,
+  geminiKeyMask: null as string | null,
+  shippingRates: { "Kosovë": 2.0, "Shqipëri": 3.0, "Maqedoni": 3.0 } as Record<string, number>,
+};
+
 export default function NewOrder() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const hasGeminiKey = useQuery(api.appSettings.hasGeminiKey, {});
-  const publicSettings = useQuery(api.appSettings.getPublicSettings, {});
+  const rawSettings = useQuery(api.appSettings.getPublicSettings, {});
+  // Defensive hook fallback: undefined (loading/error) never reaches the
+  // component tree — the default object is substituted immediately.
+  const publicSettings = rawSettings ?? DEFAULT_APP_SETTINGS;
   const cheetahConfig = useQuery(api.cheetah.getConfig, {});
   const createOrder = useMutation(api.orders.create);
   const dispatchOrder = useAction(api.cheetah.dispatchOrder);
   const parseWithGemini = useAction(api.aiParser.parseWithGemini);
-
-  // Catalog "Porosit Tani" pre-fill: /orders/new?product=:id
-  const productId = searchParams.get("product");
-  const catalogProduct = useQuery(
-    api.products.get,
-    productId ? { id: productId as any } : "skip",
-  );
-  const prefillDoneRef = useRef(false);
-  useEffect(() => {
-    if (!catalogProduct || prefillDoneRef.current) return;
-    prefillDoneRef.current = true;
-    setForm((f) => ({
-      ...f,
-      productDescription: catalogProduct.name,
-      productPrice: catalogProduct.price,
-      totalAmount: catalogProduct.price + (f.postalFee || 0),
-    }));
-    toast.info(`Produkti "${catalogProduct.name}" u shtua në porosi.`);
-  }, [catalogProduct]);
 
   const [mode, setMode] = useState<CreateMode>("manual");
   const [image, setImage] = useState<File | null>(null);
@@ -129,28 +122,27 @@ export default function NewOrder() {
     setOcrProgress(0);
     try {
       let usedEngine: Engine = null;
-      if (hasGeminiKey === true) {
+      if (publicSettings.hasGeminiKey === true) {
         try {
           const base64 = await fileToBase64(image);
           const result = await parseWithGemini({ imageBase64: base64, mimeType: image.type || "image/png" });
           if (result.engine && result.parsed) {
+            // ── 8-Field Schema Mapping (Part 3) ──
+            // Every parser field is applied with a safe default so a partial
+            // AI response can never produce undefined in the form state.
             const p = result.parsed;
-            setForm({
-              first_name: p.first_name ?? "",
-              last_name: p.last_name ?? "",
-              phone: p.phone ?? "",
-              instagram: "",
-              city: p.city ?? "",
-              address: p.address ?? "",
-              addressDetails: p.address_details ?? "",
-              country: "Kosovë",
-              productDescription: p.product_description ?? "",
+            setForm((f) => ({
+              ...f,
+              first_name: p.first_name || "",
+              last_name: p.last_name || "",
+              phone: p.phone || "",
+              city: p.city || "",
+              address: p.address || "",
+              addressDetails: p.address_details || "",
+              productDescription: p.product_description || "",
               productPrice: p.price ?? 0,
-              postalFee: 0,
-              totalAmount: p.price ?? 0,
-              deliveryOpen: false,
-              deliveryExchange: false,
-            });
+              totalAmount: (p.price ?? 0) + (f.postalFee || 0),
+            }));
             setEngine("gemini");
             usedEngine = "gemini";
           }

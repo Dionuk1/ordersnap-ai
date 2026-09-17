@@ -69,10 +69,9 @@ export const overview = query({
       throw new Error("Akses i kufizuar: vetëm administratorët.");
     }
 
-    const [users, orders, products, tenants, logs] = await Promise.all([
+    const [users, orders, tenants, logs] = await Promise.all([
       ctx.db.query("users").collect(),
       ctx.db.query("orders").collect(),
-      ctx.db.query("products").collect(),
       ctx.db.query("tenants").collect(),
       ctx.db.query("audit_logs").collect(),
     ]);
@@ -115,8 +114,6 @@ export const overview = query({
       ordersToday,
       revenue: Math.round(revenue * 100) / 100,
       pipeline: Math.round(pipeline * 100) / 100,
-      totalProducts: products.length,
-      activeProducts: products.filter((p) => p.isActive !== false).length,
       courier: {
         configured: Boolean(cheetah?.username && cheetah?.password),
         autoDispatch: cheetah?.autoDispatch ?? false,
@@ -126,113 +123,6 @@ export const overview = query({
       },
       recentAuditCount: logs.length,
     };
-  },
-});
-
-// ── Product & Catalog CRUD ────────────────────────────────────────────────
-
-export const listAllProducts = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user || !(await isAdminUser(user))) {
-      throw new Error("Akses i kufizuar: vetëm administratorët.");
-    }
-    const products = await ctx.db.query("products").collect();
-    return products.sort((a, b) => a.name.localeCompare(b.name));
-  },
-});
-
-const productFields = {
-  name: v.string(),
-  slug: v.string(),
-  description: v.optional(v.string()),
-  category: v.string(),
-  price: v.number(),
-  compareAtPrice: v.optional(v.number()),
-  stock: v.number(),
-  images: v.optional(v.array(v.string())),
-  isActive: v.optional(v.boolean()),
-};
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-export const createProduct = mutation({
-  args: { ...productFields, masterPasskey: v.optional(v.string()) },
-  handler: async (ctx, { masterPasskey, ...data }) => {
-    const user = await requireAdmin(ctx, masterPasskey);
-    void user;
-    const slug = data.slug.trim() || slugify(data.name);
-    const existing = await ctx.db
-      .query("products")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .first();
-    if (existing) throw new Error("Ekziston produkt me këtë slug.");
-    return ctx.db.insert("products", {
-      ...data,
-      slug,
-      isActive: data.isActive ?? true,
-    });
-  },
-});
-
-export const updateProduct = mutation({
-  args: {
-    id: v.id("products"),
-    name: v.optional(v.string()),
-    description: v.optional(v.string()),
-    category: v.optional(v.string()),
-    price: v.optional(v.number()),
-    compareAtPrice: v.optional(v.number()),
-    stock: v.optional(v.number()),
-    images: v.optional(v.array(v.string())),
-    isActive: v.optional(v.boolean()),
-    masterPasskey: v.optional(v.string()),
-  },
-  handler: async (ctx, { id, masterPasskey, ...patch }) => {
-    const user = await requireAdmin(ctx, masterPasskey);
-    void user;
-    const product = await ctx.db.get(id);
-    if (!product) throw new Error("Produkti nuk u gjet.");
-    const clean = Object.fromEntries(
-      Object.entries(patch).filter(([, v]) => v !== undefined),
-    );
-    await ctx.db.patch(id, clean);
-  },
-});
-
-export const setStock = mutation({
-  args: { id: v.id("products"), stock: v.number(), masterPasskey: v.optional(v.string()) },
-  handler: async (ctx, { id, stock, masterPasskey }) => {
-    const user = await requireAdmin(ctx, masterPasskey);
-    void user;
-    if (stock < 0) throw new Error("Stoku nuk mund të jetë negativ.");
-    await ctx.db.patch(id, { stock });
-  },
-});
-
-export const archiveProduct = mutation({
-  args: { id: v.id("products"), archive: v.boolean(), masterPasskey: v.optional(v.string()) },
-  handler: async (ctx, { id, archive, masterPasskey }) => {
-    const user = await requireAdmin(ctx, masterPasskey);
-    void user;
-    await ctx.db.patch(id, { isActive: !archive });
-  },
-});
-
-export const removeProduct = mutation({
-  args: { id: v.id("products"), masterPasskey: v.optional(v.string()) },
-  handler: async (ctx, { id, masterPasskey }) => {
-    const user = await requireAdmin(ctx, masterPasskey);
-    void user;
-    await ctx.db.delete(id);
   },
 });
 

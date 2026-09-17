@@ -63,13 +63,13 @@ export interface Order {
   deliveryExchange: boolean;
   // Status & meta
   status: OrderStatus;
-  source: "ai-gemini" | "ai-local" | "catalog" | "manual";
+  source: "ai-gemini" | "ai-local" | "manual";
   createdAt: number;
 }
 
 export type NewOrderInput = Omit<Order, "id" | "orderNumber" | "createdAt">;
 
-/** Full state of the order entry form (pre-fillable by parser / catalog). */
+/** Full state of the order entry form (pre-fillable by parser). */
 export interface OrderFormState {
   firstName: string;
   lastName: string;
