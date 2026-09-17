@@ -50,8 +50,11 @@ const schema = defineSchema(
       logoUrl: v.optional(v.string()),
       accentColor: v.optional(v.string()),
       isActive: v.optional(v.boolean()),
+      ownerEmail: v.optional(v.string()),
       createdBy: v.optional(v.id("users")),
-    }).index("by_slug", ["slug"]),
+    })
+      .index("by_slug", ["slug"])
+      .index("by_ownerEmail", ["ownerEmail"]),
 
     app_settings: defineTable({
       key: v.string(),

@@ -26,6 +26,24 @@ export const getBySlug = query({
   },
 });
 
+/**
+ * Public lookup by the tenant owner's email, used by the login page to
+ * auto-populate the dedicated company link box as the user types.
+ */
+export const resolveByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized.includes("@")) return null;
+    const tenant = await ctx.db
+      .query("tenants")
+      .withIndex("by_ownerEmail", (q) => q.eq("ownerEmail", normalized))
+      .first();
+    if (!tenant || tenant.isActive === false) return null;
+    return { slug: tenant.slug, name: tenant.name };
+  },
+});
+
 /** Active workspace of the signed-in user (null when none bound). */
 export const getActive = query({
   args: {},
@@ -62,6 +80,7 @@ export const upsert = mutation({
     logoUrl: v.optional(v.string()),
     accentColor: v.optional(v.string()),
     isActive: v.optional(v.boolean()),
+    ownerEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -82,6 +101,7 @@ export const upsert = mutation({
       logoUrl: args.logoUrl,
       accentColor: args.accentColor,
       isActive: args.isActive,
+      ownerEmail: args.ownerEmail?.trim().toLowerCase(),
     };
     if (existing) {
       await ctx.db.patch(existing._id, patch);
@@ -112,6 +132,7 @@ export const ensureDemoTenant = mutation({
       slug: "flladituks",
       name: "FlladituKS",
       subtitle: "Hyr në llogarinë tënde",
+      ownerEmail: "flladituksshop@hotmail.com",
       isActive: true,
     });
   },

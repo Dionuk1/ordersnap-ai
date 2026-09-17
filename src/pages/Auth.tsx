@@ -1,7 +1,9 @@
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
+  ArrowRight,
   Building2,
+  Check,
   Eye,
   EyeOff,
   Loader2,
@@ -39,6 +41,27 @@ function normalizeTenantSlug(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Extracts display initials from a company name:
+ * "FlladituKS" → "FL" (leading capital-pairs win over word-splitting),
+ * "OrderSnap AI" → "OA", "flladituks shop" → "FS".
+ */
+function extractInitials(name: string): string {
+  const clean = name.trim();
+  if (!clean) return "";
+  // CamelCase / mixed-case pairs (FlladituKS → F, K)
+  const caps = clean.match(/[A-Z]/g);
+  if (caps && caps.length >= 2) {
+    return (caps[0] + caps[1]).toUpperCase();
+  }
+  // Fall back to first letter of each word, then first two letters.
+  const words = clean.split(/[\s_-]+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase();
+}
+
 function resolveRedirectAfterAuth(
   returnTo: string | null,
   fallback = "/dashboard",
@@ -59,10 +82,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [rememberMe, setRememberMe] = useState(true);
   const boundRef = useRef(false);
 
+  // Shared email so it survives switching global ⇄ tenant login (requirement 3).
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
   // Password reset flow: "forgot" = request code by email, "reset" = enter
   // the 6-digit code + the new password (typed twice).
   const [view, setView] = useState<"login" | "forgot" | "reset">("login");
-  const [resetEmail, setResetEmail] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
@@ -85,17 +111,18 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const tenantResolved = normalizedSlug !== "" && tenant !== undefined;
   const isTenantMode = normalizedSlug !== "";
   const tenantName = tenant?.name ?? null;
-  const tenantInitials = tenantName
-    ? tenantName
-        .split(/\s+/)
-        .map((w) => w[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase()
-    : "";
+  const tenantInitials = tenantName ? extractInitials(tenantName) : "";
   const tenantSubtitle = tenant?.subtitle ?? "Hyr në llogarinë tënde";
   const tenantLogoUrl = tenant?.logoUrl ?? null;
-  const accent = tenant?.accentColor ?? "#7c5cfc";
+
+  // ── Dynamic tenant lookup by typed email (requirement 1) ────────────────
+  const emailTrimmed = email.trim().toLowerCase();
+  const emailTenant = useQuery(
+    api.tenants.resolveByEmail,
+    !isTenantMode && emailTrimmed.includes("@") && emailTrimmed.length > 5
+      ? { email: emailTrimmed }
+      : "skip",
+  );
 
   // ── 2. Data scope injection: bind workspace to resolved tenant ─────────
   const setActiveTenant = useMutation(api.tenants.setActiveTenant);
@@ -153,10 +180,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setIsLoading(true);
     setError(null);
     try {
-      const formData = new FormData(event.currentTarget);
       await signIn("password", {
-        email: String(formData.get("email") ?? ""),
-        password: String(formData.get("password") ?? ""),
+        email: emailTrimmed,
+        password,
         flow: "signIn",
       });
       // Bind the active workspace to the resolved tenant before redirecting.
@@ -183,7 +209,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setResetLoading(true);
     setResetError(null);
     try {
-      await signIn("password", { flow: "reset", email: resetEmail });
+      await signIn("password", { flow: "reset", email: emailTrimmed });
       toast.success("Kodi i rivendosjes u dërgua në emailin tuaj.");
       setView("reset");
     } catch {
@@ -208,7 +234,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     try {
       await signIn("password", {
         flow: "reset-verification",
-        email: resetEmail,
+        email: emailTrimmed,
         code: resetCode,
         newPassword: resetPassword,
       });
@@ -224,80 +250,72 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      await signIn("google");
-    } catch {
-      setError(
-        "Kyçja me Google nuk është e konfiguruar. Përdorni email & fjalëkalim.",
-      );
-      setIsLoading(false);
-    }
-  };
+  const emailField = (id: string) => (
+    <div className="space-y-2">
+      <Label
+        htmlFor={id}
+        className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+      >
+        Email Adresa
+      </Label>
+      <div className="relative">
+        <Mail className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          id={id}
+          name="email"
+          type="email"
+          autoComplete="email"
+          placeholder="emri@shembull.com"
+          className="h-11 rounded-xl border-border/80 pl-10 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={isLoading}
+          required
+        />
+      </div>
+    </div>
+  );
 
-  const passwordFields = (idPrefix: string) => (
-    <>
-      <div className="space-y-2">
-        <Label
-          htmlFor={`${idPrefix}-email`}
-          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+  const passwordField = (id: string, autoComplete: string) => (
+    <div className="space-y-2">
+      <Label
+        htmlFor={id}
+        className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+      >
+        Fjalëkalimi
+      </Label>
+      <div className="relative">
+        <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          id={id}
+          name="password"
+          type={showPassword ? "text" : "password"}
+          autoComplete={autoComplete}
+          placeholder="••••••••"
+          className="h-11 rounded-xl border-border/80 pl-10 pr-10 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={isLoading}
+          required
+          minLength={8}
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword((s) => !s)}
+          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          tabIndex={-1}
+          aria-label={
+            showPassword ? "Fshih fjalëkalimin" : "Shfaq fjalëkalimin"
+          }
         >
-          Email Adresa
-        </Label>
-        <div className="relative">
-          <Mail className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id={`${idPrefix}-email`}
-            name="email"
-            type="email"
-            autoComplete="email"
-            placeholder="emri@shembull.com"
-            className="h-11 rounded-xl pl-10"
-            disabled={isLoading}
-            required
-          />
-        </div>
+          {showPassword ? (
+            <EyeOff className="size-4" />
+          ) : (
+            <Eye className="size-4" />
+          )}
+        </button>
       </div>
-      <div className="space-y-2">
-        <Label
-          htmlFor={`${idPrefix}-password`}
-          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-        >
-          Fjalëkalimi
-        </Label>
-        <div className="relative">
-          <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id={`${idPrefix}-password`}
-            name="password"
-            type={showPassword ? "text" : "password"}
-            autoComplete="current-password"
-            placeholder="••••••••"
-            className="h-11 rounded-xl pl-10 pr-10"
-            disabled={isLoading}
-            required
-            minLength={8}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((s) => !s)}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-            tabIndex={-1}
-            aria-label={
-              showPassword ? "Fshih fjalëkalimin" : "Shfaq fjalëkalimin"
-            }
-          >
-            {showPassword ? (
-              <EyeOff className="size-4" />
-            ) : (
-              <Eye className="size-4" />
-            )}
-          </button>
-        </div>
-      </div>
-    </>
+    </div>
   );
 
   const checkbox = (
@@ -310,7 +328,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         type="checkbox"
         checked={rememberMe}
         onChange={(e) => setRememberMe(e.target.checked)}
-        className="size-4 cursor-pointer accent-primary"
+        className="size-4 cursor-pointer accent-blue-600"
       />
       Më mbaj mend
     </label>
@@ -337,14 +355,14 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       alt={tenantName ?? "Logo"}
                       width={64}
                       height={64}
-                      className="mb-4 size-16 rounded-2xl object-cover"
+                      className="mb-4 size-16 rounded-2xl object-cover ring-1 ring-white/10"
                     />
                   ) : (
                     <div
-                      className="mb-4 flex size-16 items-center justify-center rounded-2xl text-xl font-bold tracking-tight text-white"
+                      className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 via-slate-900 to-black text-xl font-bold tracking-tight text-white ring-1 ring-white/10"
                       style={{
-                        backgroundColor: accent,
-                        boxShadow: `0 12px 32px -12px ${accent}80`,
+                        boxShadow:
+                          "0 12px 32px -12px rgba(37, 99, 235, 0.55)",
                       }}
                     >
                       {tenantInitials}
@@ -369,13 +387,20 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               className="mb-8 flex flex-col items-center text-center"
             >
               <Link to="/">
-                <img
-                  src={logo}
-                  alt="OrderSnap AI"
-                  width={64}
-                  height={64}
-                  className="mb-4 size-16 rounded-2xl"
-                />
+                <div
+                  className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 via-slate-900 to-black ring-1 ring-white/10"
+                  style={{
+                    boxShadow: "0 12px 32px -12px rgba(37, 99, 235, 0.55)",
+                  }}
+                >
+                  <img
+                    src={logo}
+                    alt="OrderSnap AI"
+                    width={44}
+                    height={44}
+                    className="size-11 rounded-xl"
+                  />
+                </div>
               </Link>
               <h1 className="text-3xl font-bold tracking-tight">
                 {view === "login"
@@ -389,7 +414,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   ? "Kyçu për të menaxhuar porositë, tracking dhe integrimet me postat."
                   : view === "forgot"
                     ? "Shkruani emailin e llogarisë suaj dhe do t'ju dërgojmë një kod rivendosjeje."
-                    : `Shkruani kodin e dërguar në ${resetEmail} dhe fjalëkalimin tuaj të ri.`}
+                    : `Shkruani kodin e dërguar në ${emailTrimmed} dhe fjalëkalimin tuaj të ri.`}
               </p>
             </motion.div>
           )}
@@ -402,7 +427,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           >
             {view === "login" && (
               <form onSubmit={handleSignIn} className="space-y-4">
-                {passwordFields("login")}
+                {emailField("login-email")}
+                {passwordField("login-password", "current-password")}
 
                 {error && (
                   <p className="text-sm text-destructive" role="alert">
@@ -415,25 +441,29 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <button
                     type="button"
                     onClick={() => {
-                      setResetEmail("");
                       setResetCode("");
                       setResetPassword("");
                       setResetConfirm("");
                       setResetError(null);
                       setView("forgot");
                     }}
-                    className="cursor-pointer text-sm text-muted-foreground transition-colors hover:text-primary"
+                    className="cursor-pointer text-sm text-muted-foreground transition-colors hover:text-blue-500"
                   >
                     Keni harruar fjalëkalimin?
                   </button>
                 </div>
 
                 {/* Tenant slug resolver — only on the global login */}
-                {!isTenantMode && <TenantLinkSection />}
+                {!isTenantMode && (
+                  <TenantLinkSection
+                    email={emailTrimmed}
+                    matchedTenant={emailTenant ?? null}
+                  />
+                )}
 
                 <Button
                   type="submit"
-                  className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-base font-semibold text-white shadow-[0_8px_24px_-8px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-blue-600"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -446,32 +476,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
             {view === "forgot" && (
               <form onSubmit={handleRequestReset} className="space-y-4">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="reset-email"
-                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                  >
-                    Email Adresa
-                  </Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="reset-email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="emri@shembull.com"
-                      className="h-11 rounded-xl pl-10"
-                      value={resetEmail}
-                      onChange={(e) => setResetEmail(e.target.value)}
-                      disabled={resetLoading}
-                      required
-                    />
-                  </div>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Do t'ju dërgojmë një kod 6-shifror për rivendosjen e
-                    fjalëkalimit.
-                  </p>
-                </div>
+                {emailField("reset-email")}
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Do t'ju dërgojmë një kod 6-shifror për rivendosjen e
+                  fjalëkalimit.
+                </p>
 
                 {resetError && (
                   <p className="text-sm text-destructive" role="alert">
@@ -481,7 +490,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
                 <Button
                   type="submit"
-                  className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-base font-semibold text-white shadow-[0_8px_24px_-8px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-blue-600"
                   disabled={resetLoading}
                 >
                   {resetLoading ? (
@@ -518,7 +527,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     placeholder="000000"
                     inputMode="numeric"
                     maxLength={6}
-                    className="h-11 rounded-xl text-center text-lg font-semibold tracking-[0.4em]"
+                    className="h-11 rounded-xl border-border/80 text-center text-lg font-semibold tracking-[0.4em] focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
                     disabled={resetLoading}
                     required
                   />
@@ -538,7 +547,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       type={showPassword ? "text" : "password"}
                       autoComplete="new-password"
                       placeholder="••••••••"
-                      className="h-11 rounded-xl pl-10 pr-10"
+                      className="h-11 rounded-xl border-border/80 pl-10 pr-10 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
                       value={resetPassword}
                       onChange={(e) => setResetPassword(e.target.value)}
                       disabled={resetLoading}
@@ -577,7 +586,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       type={showPassword ? "text" : "password"}
                       autoComplete="new-password"
                       placeholder="••••••••"
-                      className="h-11 rounded-xl pl-10 pr-10"
+                      className="h-11 rounded-xl border-border/80 pl-10 pr-10 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
                       value={resetConfirm}
                       onChange={(e) => setResetConfirm(e.target.value)}
                       disabled={resetLoading}
@@ -610,7 +619,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
                 <Button
                   type="submit"
-                  className="h-11 w-full rounded-xl bg-primary text-base font-semibold"
+                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-base font-semibold text-white shadow-[0_8px_24px_-8px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-blue-600"
                   disabled={resetLoading}
                 >
                   {resetLoading ? (
@@ -670,19 +679,37 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   );
 }
 
-/** "Hyr nga linku i dedikuar i kompanisë suaj" — slug resolver card (screenshot 1). */
-function TenantLinkSection() {
+/**
+ * "Hyr nga linku i dedikuar i kompanisë suaj" — resolves the company either
+ * from the typed email (dynamic lookup) or a manual slug, then shows the
+ * exact branded URL and navigates to /login?tenant={slug}.
+ */
+function TenantLinkSection({
+  email,
+  matchedTenant,
+}: {
+  email: string;
+  matchedTenant: { slug: string; name: string } | null;
+}) {
   const [slugInput, setSlugInput] = useState("");
   const navigate = useNavigate();
-  const previewUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/login?tenant=flladituks`
-      : "https://dergesa.app/login?tenant=flladituks";
+
+  const resolvedSlug = matchedTenant?.slug ?? null;
+  const manualSlug = slugInput.trim() ? normalizeTenantSlug(slugInput) : null;
+  const activeSlug = manualSlug ?? resolvedSlug;
+  const targetUrl =
+    activeSlug && typeof window !== "undefined"
+      ? `${window.location.origin}/login?tenant=${activeSlug}`
+      : null;
 
   const handleGo = () => {
-    const slug = normalizeTenantSlug(slugInput);
+    const slug = activeSlug;
     if (!slug) {
-      toast.error("Shkruani slug-un e kompanisë (p.sh. flladituks).");
+      toast.error(
+        email
+          ? "Nuk u gjet kompani për këtë email. Shkruani slug-un e kompanisë."
+          : "Shkruani emailin ose slug-un e kompanisë (p.sh. flladituks).",
+      );
       return;
     }
     navigate(`/login?tenant=${encodeURIComponent(slug)}`);
@@ -692,11 +719,13 @@ function TenantLinkSection() {
     <motion.div
       layout
       initial={false}
-      className="rounded-xl border bg-muted/40 p-4"
+      className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4"
     >
       <p className="text-sm font-medium text-foreground/90">
         Hyr nga linku i dedikuar i kompanisë suaj:
       </p>
+
+      {/* Manual slug entry */}
       <div className="relative mt-3">
         <Building2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -708,25 +737,41 @@ function TenantLinkSection() {
               handleGo();
             }
           }}
-          placeholder="flladituks"
-          className="h-10 rounded-lg pl-9 text-sm"
+          placeholder={resolvedSlug ? resolvedSlug : "flladituks"}
+          className="h-10 rounded-lg border-border/80 pl-9 text-sm focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
           aria-label="Slug i kompanisë"
         />
       </div>
+
+      {resolvedSlug && !manualSlug ? (
+        /* Dynamic match from the typed email — show the exact URL */
+        <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-600/10 px-3 py-2.5">
+          <Check className="size-4 shrink-0 text-blue-500" />
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/90">
+            {matchedTenant!.name}:{" "}
+            <span className="font-medium text-blue-500">{targetUrl}</span>
+          </span>
+        </div>
+      ) : null}
+
       <Button
         type="button"
-        className="mt-2.5 h-10 w-full rounded-lg bg-blue-600 text-sm font-medium hover:bg-blue-600/90"
+        className="mt-2.5 h-10 w-full rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-500"
         onClick={handleGo}
       >
-        Hyr nga linku i kompanisë →
+        Hyr nga linku i kompanisë
+        <ArrowRight className="ml-1 size-4" />
       </Button>
-      <button
-        type="button"
-        onClick={() => navigate("/login?tenant=flladituks")}
-        className="mt-2 w-full cursor-pointer text-center text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
-      >
-        {previewUrl}
-      </button>
+
+      {targetUrl ? (
+        <button
+          type="button"
+          onClick={handleGo}
+          className="mt-2 w-full cursor-pointer text-center text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+        >
+          {targetUrl}
+        </button>
+      ) : null}
     </motion.div>
   );
 }
