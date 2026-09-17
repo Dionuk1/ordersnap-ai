@@ -20,12 +20,27 @@ Extract the customer's ORDER information from the conversation and return a JSON
 
 Rules:
 - Extract REAL HUMAN NAMES only. Instagram handles, brand names, and seller names must NOT be treated as first_name/last_name.
+- NEVER put street keywords (Rruga, Rr., Bulevardi, Bulevard, Lagja, Lagjja, Shtëpia, Shtepia, Hyrja, Te, Tek, Nr.) into first_name or last_name — those belong in address. A line like "Fushe Kosove Rr. Bajram Beg h.B kt 4" contains the CITY + ADDRESS, never a name.
+- Isolate the customer's full human name wherever it appears in the text, even on its own line or mid-message (e.g. "Mafir Beliu" → first_name: "Mafir", last_name: "Beliu").
+- CITY must be an OFFICIAL Kosovo municipality (or Albania/North Macedonia if clearly abroad). Standardize spelling variations automatically: "Fushe Kosove", "F.Kosove", "Fushë Kosovë" → "Fushë Kosovë"; "Prishtine" → "Prishtinë"; "Malisheva" → "Malishevë"; "Klina" → "Klinë"; "Vitia" → "Vitia".
+- PHONE must be a clean 9-digit local Kosovo number starting with 04 (e.g. "044123245") or the international "+383…" form. Strip all spaces, dashes and parentheses.
 - Kosovo comes first. If the screenshot mentions both Kosovo and another country, prefer the Kosovo interpretation.
 - Prioritize Kosovo phone patterns: 044, 045, 049, 043, 048, 046, 047 and international +383.
-- Prioritize Kosovo municipalities: Prishtinë, Prizren, Ferizaj, Pejë, Gjakovë, Gjilan, Mitrovicë, Podujevë, Vushtrri, Obiliq, Suharekë, Drenas, Lipjan, Fushë Kosovë, Kamenicë, Rahovec, Viti, Deçan, Klinë, Malisheva.
 - If a field is not present in the conversation, use an empty string for strings and 0 for numbers.
 - "price" must be a plain number, never a string, no currency symbols.
-- Return ONLY the JSON object, no markdown fences, no explanations.`;
+- Return ONLY the JSON object, no markdown fences, no explanations.
+
+Example — extract the human name, never street names:
+Input text:
+"Pershendetje desha me porosit me posta
+Mafir Beliu
+044 123 245
+Fushe Kosove Rr. Bajram Beg h.B kt 4
+Patikat te zeza numri 43
+Sa eshte kushtojne? 45€ me gjith poste"
+Required output:
+{"first_name": "Mafir", "last_name": "Beliu", "phone": "044123245", "city": "Fushë Kosovë", "address": "Rruga Bajram Beg", "address_details": "Hyrja B, Kat 4", "product_description": "Patika të zeza numri 43", "price": 45}
+Notice: "Fushe Kosove" was standardized to the official municipality "Fushë Kosovë" and did NOT leak into the name fields; "Rr. Bajram Beg" stayed in address; "h.B kt 4" became address_details.`;
 
 // Gemini structured-output schema — enforces the exact 8-field JSON contract.
 const RESPONSE_SCHEMA = {
@@ -73,6 +88,128 @@ interface ParsedOrder {
   price: number;
 }
 
+/** Official Kosovo municipalities (the canonical output forms). */
+const KOSOVO_MUNICIPALITIES = [
+  "Prishtinë", "Fushë Kosovë", "Prizren", "Ferizaj", "Pejë",
+  "Gjakovë", "Gjilan", "Mitrovicë", "Podujevë", "Vushtrri",
+  "Obiliq", "Drenas", "Suharekë", "Lipjan", "Klinë", "Istog",
+  "Deçan", "Kaçanik", "Vitia", "Kamenica", "Malishevë",
+] as const;
+
+// Fuzzy-match aliases: common spellings / abbreviations → official form.
+const CITY_ALIASES: Record<string, string> = {
+  "fushe kosove": "Fushë Kosovë",
+  "fushekosove": "Fushë Kosovë",
+  "f.kosove": "Fushë Kosovë",
+  "fkosove": "Fushë Kosovë",
+  "f.kosova": "Fushë Kosovë",
+  "prishtine": "Prishtinë",
+  "prishtina": "Prishtinë",
+  "pristina": "Prishtinë",
+  "prizreni": "Prizren",
+  "ferizaji": "Ferizaj",
+  "ufk": "Fushë Kosovë",
+  "peja": "Pejë",
+  "gjakova": "Gjakovë",
+  "gjilani": "Gjilan",
+  "mitrovice": "Mitrovicë",
+  "podujeva": "Podujevë",
+  "vushtrria": "Vushtrri",
+  "obiliq": "Obiliq",
+  "kastriot": "Obiliq",
+  "drenasi": "Drenas",
+  "glogovac": "Drenas",
+  "suhareka": "Suharekë",
+  "theranda": "Suharekë",
+  "lipjani": "Lipjan",
+  "klina": "Klinë",
+  "kline": "Klinë",
+  "istogu": "Istog",
+  "decani": "Deçan",
+  "kacanik": "Kaçanik",
+  "vitia": "Vitia",
+  "viti": "Vitia",
+  "kamenice": "Kamenica",
+  "drenica": "Drenas",
+  "malisheva": "Malishevë",
+  "malisheve": "Malishevë",
+};
+
+/** Street keywords that must never leak into first/last name fields. */
+const STREET_KEYWORDS =
+  /\b(rruga|rr\.|rr|bulevardi|bulevard|blv|lagja|lagjja|shtepia|shtëpia|hyrja|hyrje|te|tek|nr\.|number)\b/i;
+
+/**
+ * Fuzzy-match a raw city string against official Kosovo municipalities.
+ * Normalizes diacritics and applies known aliases first.
+ */
+function normalizeCity(raw: string): string {
+  const value = raw.trim();
+  if (!value) return "";
+  const lower = value.toLowerCase();
+
+  // Exact official form wins immediately.
+  const official = KOSOVO_MUNICIPALITIES.find(
+    (m) => m.toLowerCase() === lower,
+  );
+  if (official) return official;
+
+  // Alias table (covers "Fushe Kosove", "F.Kosove", …).
+  const stripped = lower.replace(/[ëe]/g, (m) => (m === "ë" ? "e" : m));
+  if (CITY_ALIASES[lower]) return CITY_ALIASES[lower];
+  if (CITY_ALIASES[stripped]) return CITY_ALIASES[stripped];
+
+  // Diacritic-insensitive fuzzy match against official municipalities.
+  const fold = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+  const foldedInput = fold(value);
+  const match = KOSOVO_MUNICIPALITIES.find((m) => fold(m) === foldedInput);
+  if (match) return match;
+
+  // Substring fallback: input contains an official name or vice versa.
+  const contains = KOSOVO_MUNICIPALITIES.find(
+    (m) => {
+      const fm = fold(m);
+      return fm.length >= 4 && (foldedInput.includes(fm) || fm.includes(foldedInput));
+    },
+  );
+  return contains ?? value;
+}
+
+/** Remove street keywords that leaked into a name field. */
+function scrubStreetKeywords(name: string): string {
+  if (!name) return "";
+  if (STREET_KEYWORDS.test(name)) {
+    return ""; // A street fragment is never a human name.
+  }
+  return name;
+}
+
+/** Normalize a phone to a clean 9-digit Kosovo local format (04…). */
+function normalizePhone(raw: string): string {
+  let digits = raw.replace(/[^\d+]/g, "");
+  if (digits.startsWith("+383")) {
+    digits = "0" + digits.slice(4);
+  } else if (digits.startsWith("383")) {
+    digits = "0" + digits.slice(3);
+  }
+  return digits;
+}
+
+/** Apply all post-processing normalizers to a raw parsed object. */
+function sanitizeParsedOrder(obj: Record<string, unknown>): ParsedOrder {
+  return {
+    first_name: scrubStreetKeywords(String(obj.first_name ?? "").trim()),
+    last_name: scrubStreetKeywords(String(obj.last_name ?? "").trim()),
+    phone: normalizePhone(String(obj.phone ?? "").replace(/[\s-]/g, "").trim()),
+    city: normalizeCity(String(obj.city ?? "").trim()),
+    address: String(obj.address ?? "").trim(),
+    address_details: String(obj.address_details ?? "").trim(),
+    product_description: String(obj.product_description ?? "").trim(),
+    price: Number(obj.price ?? 0) || 0,
+  };
+}
+
 /** Exported so the frontend can type the parser response explicitly. */
 export interface GeminiParseResult {
   engine: "gemini" | null;
@@ -89,16 +226,7 @@ function extractJson(text: string): ParsedOrder | null {
     const end = cleaned.lastIndexOf("}");
     if (start === -1 || end === -1) return null;
     const obj = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
-    return {
-      first_name: String(obj.first_name ?? "").trim(),
-      last_name: String(obj.last_name ?? "").trim(),
-      phone: String(obj.phone ?? "").replace(/[\s-]/g, "").trim(),
-      city: String(obj.city ?? "").trim(),
-      address: String(obj.address ?? "").trim(),
-      address_details: String(obj.address_details ?? "").trim(),
-      product_description: String(obj.product_description ?? "").trim(),
-      price: Number(obj.price ?? 0) || 0,
-    };
+    return sanitizeParsedOrder(obj);
   } catch {
     return null;
   }
