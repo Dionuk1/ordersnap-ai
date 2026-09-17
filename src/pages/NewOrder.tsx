@@ -12,6 +12,7 @@ import {
 import { parseOrderTextLocal } from "@/lib/local-parser";
 import { fileToBase64, runOcr } from "@/lib/ocr";
 import { AppShell } from "@/components/AppShell";
+import { QueryErrorBoundary } from "@/components/QueryErrorBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +42,7 @@ const DEFAULT_APP_SETTINGS = {
   shippingRates: { "Kosovë": 2.0, "Shqipëri": 6.0, "Maqedoni": 3.0 } as Record<string, number>,
 };
 
-export default function NewOrder() {
+function NewOrderInner() {
   const navigate = useNavigate();
   const rawSettings = useQuery(api.appSettings.getPublicSettings, {});
   // Defensive hook fallback: undefined (loading/error) never reaches the
@@ -419,6 +420,39 @@ export default function NewOrder() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * Layer 3 of the settings-crash defense: Convex `useQuery` re-throws server
+ * errors DURING RENDER, before any `data ?? fallback` guard can run. The
+ * backend handler is zero-throw, so this boundary only fires on truly
+ * unforeseen failures — rendering a graceful notice (with retry) instead of
+ * a blank page.
+ */
+export default function NewOrder() {
+  return (
+    <QueryErrorBoundary
+      fallback={(retry) => (
+        <AppShell>
+          <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+            <AlertTriangle className="size-8 text-destructive" />
+            <div>
+              <p className="text-sm font-semibold">Cilësimet e sistemit nuk u ngarkuan.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ndodhi një gabim i përkohshëm gjatë ngarkimit të konfigurimit.
+              </p>
+            </div>
+            <Button onClick={retry} variant="outline" size="sm">
+              <RotateCcw className="mr-2 size-3.5" />
+              Provo përsëri
+            </Button>
+          </div>
+        </AppShell>
+      )}
+    >
+      <NewOrderInner />
+    </QueryErrorBoundary>
   );
 }
 
