@@ -144,13 +144,31 @@ export const remove = mutation({
   handler: async (ctx, { id }) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
-    const order = await ctx.db.get(id);
-    if (!order || order.deletedAt) throw new Error("Porosia nuk u gjet");
+
+    // Strict ID type validation + pre-deletion existence check: never throw
+    // on a missing/already-deleted order — return null so the client sees a
+    // graceful no-op instead of a runtime crash (real-time subscriptions
+    // can race the UI: a row may vanish before the delete request lands).
+    if (!id) return null;
+    const existingOrder = await ctx.db.get(id);
+    if (!existingOrder || existingOrder.deletedAt) return null;
+
     const admin = await isAdminUser(user);
-    if (!admin && order.createdBy !== user._id) {
+    if (!admin && existingOrder.createdBy !== user._id) {
       throw new Error("Nuk kini leje për këtë porosi");
     }
+
     await ctx.db.patch(id, { deletedAt: Date.now() });
+
+    await ctx.db.insert("audit_logs", {
+      action: "order.removed",
+      details: `Porosia ${existingOrder.orderNumber} u fshij (soft-delete).`,
+      userId: user._id,
+      entityType: "order",
+      entityId: id,
+    });
+
+    return id;
   },
 });
 

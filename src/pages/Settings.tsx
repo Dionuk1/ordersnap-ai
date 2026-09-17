@@ -453,10 +453,10 @@ function StaffSection() {
         <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Users className="size-5" />
         </div>
-        <CardTitle className="text-base">Menaxhimi i Stafit</CardTitle>
+        <CardTitle className="text-base">Menaxhimi i Kompanive</CardTitle>
         <CardDescription>
-          Ndryshoni rolet e përdoruesve: Admin ka qasje të plotë, Agent vetëm
-          hyrjen e porosive dhe listën.
+          Çdo llogari është Administrator i Kompanisë me qasje të plotë te
+          porositë, katalogu dhe konfigurimet e biznesit të vet.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -500,8 +500,7 @@ function StaffSection() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="agent">Agent</SelectItem>
+                        <SelectItem value="admin">Administrator i Kompanisë</SelectItem>
                       </SelectContent>
                     </Select>
                   </TableCell>

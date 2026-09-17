@@ -50,7 +50,7 @@ const features = [
     icon: ShieldCheck,
     title: "Role & Siguri",
     description:
-      "Admin dhe Agent me leje të veçanta. Çelësat API ruhen të sigurt, të dukshëm vetëm për adminat.",
+      "Çdo llogari është Administrator i Kompanisë. Çelësat API ruhen të sigurt, të dukshëm vetëm për adminat.",
   },
   {
     icon: Zap,

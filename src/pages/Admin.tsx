@@ -466,9 +466,9 @@ function ProductsTab() {
 // ── User Directory ─────────────────────────────────────────────────────────
 
 const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin" },
-  { value: "user", label: "Agent" },
-  { value: "member", label: "Customer" },
+  { value: "admin", label: "Administrator i Kompanisë" },
+  { value: "user", label: "Përgjegjës" },
+  { value: "member", label: "Klient" },
 ] as const;
 
 const ROLE_BADGE: Record<string, string> = {
@@ -497,7 +497,7 @@ function UsersTab() {
           <Users className="size-4" /> Direktoria e Përdoruesve
         </CardTitle>
         <CardDescription>
-          Promovo/ul rolet: Customer ↔ Agent ↔ Admin. Roli i adminit nuk mund të hiqet nga veti.
+          Promovo/ul rolet: Klient ↔ Përgjegjës ↔ Administrator i Kompanisë. Roli i adminit nuk mund të hiqet nga veti.
         </CardDescription>
       </CardHeader>
       <CardContent>
