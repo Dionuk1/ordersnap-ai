@@ -38,7 +38,7 @@ type CreateMode = "screenshot" | "manual";
 const DEFAULT_APP_SETTINGS = {
   hasGeminiKey: false,
   geminiKeyMask: null as string | null,
-  shippingRates: { "Kosovë": 2.0, "Shqipëri": 3.0, "Maqedoni": 3.0 } as Record<string, number>,
+  shippingRates: { "Kosovë": 2.0, "Shqipëri": 6.0, "Maqedoni": 3.0 } as Record<string, number>,
 };
 
 export default function NewOrder() {

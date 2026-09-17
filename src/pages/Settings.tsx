@@ -191,7 +191,7 @@ function ShippingRatesSection() {
     if (settings?.shippingRates) {
       setRates({
         "Kosovë": String(settings.shippingRates["Kosovë"] ?? 2),
-        "Shqipëri": String(settings.shippingRates["Shqipëri"] ?? 3),
+        "Shqipëri": String(settings.shippingRates["Shqipëri"] ?? 6),
         "Maqedoni": String(settings.shippingRates["Maqedoni"] ?? 3),
       });
     }

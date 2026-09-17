@@ -31,29 +31,39 @@ async function loadCheetahConfig(ctx: any) {
   return row ?? null;
 }
 
-/** Admin only: public view of the Cheetah config (secrets masked). */
+/** Admin only: public view of the Cheetah config (secrets masked). ZERO-THROW:
+ *  any read failure (uninitialized table/index, session race) returns the
+ *  disabled-config shape instead of crashing subscribers like /orders/new. */
 export const getConfig = query({
   args: {},
   handler: async (ctx) => {
-    const row = await loadCheetahConfig(ctx);
-    if (!row) {
+    try {
+      const row = await loadCheetahConfig(ctx);
+      if (!row) {
+        return CHEETAH_CONFIG_DISABLED;
+      }
       return {
-        hasCredentials: false,
-        username: null as string | null,
-        apiUrl: null as string | null,
-        autoDispatch: false,
-        lastSyncAt: null as number | null,
+        hasCredentials: Boolean(row.username && row.password),
+        username: row.username ?? null,
+        apiUrl: row.apiUrl ?? null,
+        autoDispatch: row.autoDispatch ?? false,
+        lastSyncAt: row.lastSyncAt ?? null,
       };
+    } catch (err) {
+      console.error("cheetah.getConfig failed, returning disabled config:", err);
+      return CHEETAH_CONFIG_DISABLED;
     }
-    return {
-      hasCredentials: Boolean(row.username && row.password),
-      username: row.username ?? null,
-      apiUrl: row.apiUrl ?? null,
-      autoDispatch: row.autoDispatch ?? false,
-      lastSyncAt: row.lastSyncAt ?? null,
-    };
   },
 });
+
+// Safe fallback shape used whenever the courier config cannot be read.
+const CHEETAH_CONFIG_DISABLED = {
+  hasCredentials: false,
+  username: null as string | null,
+  apiUrl: null as string | null,
+  autoDispatch: false,
+  lastSyncAt: null as number | null,
+};
 
 /** Admin only: save Cheetah credentials + auto-dispatch preference. */
 export const saveConfig = mutation({
@@ -279,24 +289,30 @@ export const dispatchOrder = action({
   },
 });
 
-/** Internal read of stored Cheetah credentials (used by dispatchOrder). */
+/** Internal read of stored Cheetah credentials (used by dispatchOrder).
+ *  ZERO-THROW: a failed read simply reports "no credentials". */
 export const getConfigInternal = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user || !(await isAdminUser(user))) return null;
-    const row = await ctx.db
-      .query("courier_integrations")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
-      .filter((q: any) => q.eq(q.field("provider"), "cheetah"))
-      .first();
-    if (!row) return null;
-    return {
-      hasCredentials: Boolean(row.username && row.password),
-      username: row.username ?? null,
-      password: row.password ?? null,
-      apiUrl: row.apiUrl ?? null,
-      autoDispatch: row.autoDispatch ?? false,
-    };
+    try {
+      const user = await getCurrentUser(ctx);
+      if (!user || !(await isAdminUser(user))) return null;
+      const row = await ctx.db
+        .query("courier_integrations")
+        .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+        .filter((q: any) => q.eq(q.field("provider"), "cheetah"))
+        .first();
+      if (!row) return null;
+      return {
+        hasCredentials: Boolean(row.username && row.password),
+        username: row.username ?? null,
+        password: row.password ?? null,
+        apiUrl: row.apiUrl ?? null,
+        autoDispatch: row.autoDispatch ?? false,
+      };
+    } catch (err) {
+      console.error("cheetah.getConfigInternal failed:", err);
+      return null;
+    }
   },
 });
