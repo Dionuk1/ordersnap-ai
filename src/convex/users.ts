@@ -1,4 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
 import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 
@@ -37,6 +38,16 @@ export const getCurrentUser = async (ctx: QueryCtx) => {
 export async function isAdminUser(user: Doc<"users"> | null): Promise<boolean> {
   return user?.role === "admin";
 }
+
+/** Fetch a user by id (auth required) — used by staff management. */
+export const currentUserById = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const me = await getCurrentUser(ctx);
+    if (!me) throw new Error("Not authenticated");
+    return await ctx.db.get(userId);
+  },
+});
 
 /** Convenience helpers used across modules */
 export async function requireUser(

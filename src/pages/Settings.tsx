@@ -447,7 +447,7 @@ function StaffSection() {
     try {
       await setRole({
         userId: userId as never,
-        role: role === "admin" ? "admin" : "agent",
+        role: role === "admin" ? "admin" : "member",
       });
       toast.success("Roli u përditësua");
     } catch (err) {
@@ -501,7 +501,7 @@ function StaffSection() {
                   </TableCell>
                   <TableCell>
                     <Select
-                      value={u.role === "admin" ? "admin" : "agent"}
+                      value={u.role === "store_manager" ? "admin" : "member"}
                       onValueChange={(v) => handleRoleChange(u._id, v)}
                     >
                       <SelectTrigger className="w-32" size="sm">

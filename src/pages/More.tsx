@@ -47,7 +47,7 @@ const MORE_ITEMS: MoreItem[] = [
     to: "/orders",
   },
   {
-    label: "Cilësimet",
+    label: "Cilësimet e Dyqanit",
     description: "Gemini API, tarifat postare dhe konfigurimi i postës.",
     icon: Settings,
     to: "/settings",

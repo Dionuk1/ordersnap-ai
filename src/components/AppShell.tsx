@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import {
   Activity,
   Building2,
-  ClipboardList,
   CreditCard,
   Ellipsis,
   KeyRound,
@@ -12,11 +11,12 @@ import {
   LogOut,
   Menu,
   Moon,
-  Settings,
+  PlusCircle,
   ShieldCheck,
-  Sparkles,
+  ShoppingBag,
+  SlidersHorizontal,
   Sun,
-  Users,
+  UserPlus,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -26,15 +26,15 @@ import logo from "@/assets/logo.svg";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/orders/new", label: "Porosi e Re", icon: Sparkles },
-  { to: "/orders", label: "Porositë", icon: ClipboardList },
+  { to: "/orders/new", label: "Porosi e Re", icon: PlusCircle },
+  { to: "/orders", label: "Porositë", icon: ShoppingBag },
   { to: "/more", label: "Më shumë", icon: Ellipsis },
 ];
 
-const MORE_NAV = [
-  { to: "/settings", label: "Cilësimet", icon: Settings },
-  { to: "/admin", label: "Admin Panel", icon: ShieldCheck },
-  { to: "/settings", label: "Stafi", icon: Users },
+/** Tenant administration section — store-scoped only (no Super Admin links). */
+const ADMINISTRATION_NAV = [
+  { to: "/settings", label: "Cilësimet e Dyqanit", icon: SlidersHorizontal },
+  { to: "/staff", label: "Stafi", icon: UserPlus },
 ];
 
 /** Super Admin Portal chrome — tenant navigation is strictly excluded. */
@@ -273,16 +273,16 @@ export function AppShell({
         <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
           Administrata
         </div>
-        {MORE_NAV.map((item, idx) => {
+        {ADMINISTRATION_NAV.map((item, idx) => {
           const Icon = item.icon;
           return (
             <Link
-              key={`more-${item.to}-${idx}`}
+              key={`admin-${item.to}-${idx}`}
               to={item.to}
               onClick={() => setMobileOpen(false)}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive(item.to) && item.label !== "Stafi"
+                isActive(item.to)
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
