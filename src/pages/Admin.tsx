@@ -1,4 +1,5 @@
 import { api } from "@/convex/_generated/api";
+import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/AppShell";
 import { RequireSuperAdmin } from "@/components/RequireSuperAdmin";
 import { FadeIn } from "@/components/motion";
@@ -61,14 +62,20 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "staff", label: "Kredencialet & Stafi" },
 ];
 
-/** Read the active tab from the URL (?tab=), defaulting to Kompanitë. */
+/** Read the active tab reactively from the URL (?tab=) — re-renders on change. */
 function useActiveTab(): [Tab, (t: Tab) => void] {
-  const params = new URLSearchParams(window.location.search);
+  const [params, setParams] = useSearchParams();
   const current = (params.get("tab") ?? "companies") as Tab;
   const setTab = (t: Tab) => {
-    const next = new URLSearchParams(window.location.search);
-    next.set("tab", t);
-    window.history.replaceState(null, "", `${window.location.pathname}?${next.toString()}`);
+    // replace: false → pushes history so browser back/forward switches tabs
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", t);
+        return next;
+      },
+      { replace: false },
+    );
   };
   return [current, setTab];
 }
@@ -95,6 +102,7 @@ export default function SuperAdmin() {
                 {TABS.map((t) => (
                   <button
                     key={t.key}
+                    type="button"
                     onClick={() => setTab(t.key)}
                     className={`rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
                       tab === t.key
