@@ -1,8 +1,7 @@
 import { useMutation, useQuery } from "convex/react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
-  Building2,
   Check,
   Eye,
   EyeOff,
@@ -453,12 +452,17 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </button>
                 </div>
 
-                {/* Tenant slug resolver — only on the global login */}
+                {/* Automatic company link card — only once the email
+                    matches a company in the database */}
                 {!isTenantMode && (
-                  <TenantLinkSection
-                    email={emailTrimmed}
-                    matchedTenant={emailTenant ?? null}
-                  />
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {emailTenant ? (
+                      <TenantLinkSection
+                        key="tenant-link"
+                        matchedTenant={emailTenant}
+                      />
+                    ) : null}
+                  </AnimatePresence>
                 )}
 
                 <Button
@@ -680,79 +684,47 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 }
 
 /**
- * "Hyr nga linku i dedikuar i kompanisë suaj" — resolves the company either
- * from the typed email (dynamic lookup) or a manual slug, then shows the
- * exact branded URL and navigates to /login?tenant={slug}.
+ * Automatically revealed "Hyr nga linku i dedikuar i kompanisë suaj" card.
+ * Appears only when the typed email resolves to a company in the database —
+ * no manual slug entry required. Clicking navigates to the branded
+ * /login?tenant={slug} view (email & password state carry over because the
+ * /login route stays mounted across query-param changes).
  */
 function TenantLinkSection({
-  email,
   matchedTenant,
 }: {
-  email: string;
-  matchedTenant: { slug: string; name: string } | null;
+  matchedTenant: { slug: string; name: string };
 }) {
-  const [slugInput, setSlugInput] = useState("");
   const navigate = useNavigate();
-
-  const resolvedSlug = matchedTenant?.slug ?? null;
-  const manualSlug = slugInput.trim() ? normalizeTenantSlug(slugInput) : null;
-  const activeSlug = manualSlug ?? resolvedSlug;
   const targetUrl =
-    activeSlug && typeof window !== "undefined"
-      ? `${window.location.origin}/login?tenant=${activeSlug}`
-      : null;
+    typeof window !== "undefined"
+      ? `${window.location.origin}/login?tenant=${matchedTenant.slug}`
+      : `/login?tenant=${matchedTenant.slug}`;
 
   const handleGo = () => {
-    const slug = activeSlug;
-    if (!slug) {
-      toast.error(
-        email
-          ? "Nuk u gjet kompani për këtë email. Shkruani slug-un e kompanisë."
-          : "Shkruani emailin ose slug-un e kompanisë (p.sh. flladituks).",
-      );
-      return;
-    }
-    navigate(`/login?tenant=${encodeURIComponent(slug)}`);
+    navigate(`/login?tenant=${encodeURIComponent(matchedTenant.slug)}`);
   };
 
   return (
     <motion.div
       layout
-      initial={false}
-      className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4"
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-4"
     >
       <p className="text-sm font-medium text-foreground/90">
-        Hyr nga linku i dedikuar i kompanisë suaj:
+        Hyni nga linku i dedikuar i kompanisë suaj:
       </p>
 
-      {/* Manual slug entry */}
-      <div className="relative mt-3">
-        <Building2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={slugInput}
-          onChange={(e) => setSlugInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              handleGo();
-            }
-          }}
-          placeholder={resolvedSlug ? resolvedSlug : "flladituks"}
-          className="h-10 rounded-lg border-border/80 pl-9 text-sm focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
-          aria-label="Slug i kompanisë"
-        />
+      <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-600/10 px-3 py-2.5">
+        <Check className="size-4 shrink-0 text-blue-500" />
+        <span className="min-w-0 flex-1 truncate text-xs text-foreground/90">
+          {matchedTenant.name}:{" "}
+          <span className="font-medium text-blue-500">{targetUrl}</span>
+        </span>
       </div>
-
-      {resolvedSlug && !manualSlug ? (
-        /* Dynamic match from the typed email — show the exact URL */
-        <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-600/10 px-3 py-2.5">
-          <Check className="size-4 shrink-0 text-blue-500" />
-          <span className="min-w-0 flex-1 truncate text-xs text-foreground/90">
-            {matchedTenant!.name}:{" "}
-            <span className="font-medium text-blue-500">{targetUrl}</span>
-          </span>
-        </div>
-      ) : null}
 
       <Button
         type="button"
@@ -762,16 +734,6 @@ function TenantLinkSection({
         Hyr nga linku i kompanisë
         <ArrowRight className="ml-1 size-4" />
       </Button>
-
-      {targetUrl ? (
-        <button
-          type="button"
-          onClick={handleGo}
-          className="mt-2 w-full cursor-pointer text-center text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
-        >
-          {targetUrl}
-        </button>
-      ) : null}
     </motion.div>
   );
 }
