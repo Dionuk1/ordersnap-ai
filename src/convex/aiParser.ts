@@ -73,6 +73,12 @@ interface ParsedOrder {
   price: number;
 }
 
+/** Exported so the frontend can type the parser response explicitly. */
+export interface GeminiParseResult {
+  engine: "gemini" | null;
+  parsed: ParsedOrder | null;
+}
+
 function extractJson(text: string): ParsedOrder | null {
   try {
     const cleaned = text
@@ -105,7 +111,7 @@ function extractJson(text: string): ParsedOrder | null {
  */
 export const parseWithGemini = action({
   args: { imageBase64: v.string(), mimeType: v.string() },
-  handler: async (ctx, { imageBase64, mimeType }) => {
+  handler: async (ctx, { imageBase64, mimeType }): Promise<GeminiParseResult> => {
     const user = await getCurrentUserSafe(ctx);
     if (!user) throw new Error("Not authenticated");
 
@@ -117,7 +123,7 @@ export const parseWithGemini = action({
     // Also allow platform-managed key via env
     const apiKey = setting || process.env.GEMINI_API_KEY || "";
     if (!apiKey) {
-      return { engine: null as string | null, parsed: null };
+      return { engine: null, parsed: null } satisfies GeminiParseResult;
     }
 
     const res = await fetch(
