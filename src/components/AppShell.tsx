@@ -10,6 +10,7 @@ import {
   Menu,
   Package,
   Settings,
+  ShieldCheck,
   Sparkles,
   Users,
   X,
@@ -27,6 +28,7 @@ const NAV = [
 
 const MORE_NAV = [
   { to: "/settings", label: "Cilësimet", icon: Settings, adminOnly: true },
+  { to: "/admin", label: "Admin Panel", icon: ShieldCheck, adminOnly: true },
   { to: "/settings", label: "Stafi", icon: Users, adminOnly: true },
 ];
 
@@ -45,6 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = NAV.filter((item) => !item.adminOnly || isAdmin);
 
   const isActive = (to: string) => {
+    if (to === "/admin") return location.pathname.startsWith("/admin");
     if (to === "/orders/new") return location.pathname === "/orders/new";
     if (to === "/catalog") {
       return location.pathname.startsWith("/catalog");
@@ -101,6 +104,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+
+        {/* Admin-only secondary section */}
+        {isAdmin && (
+          <>
+            <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              Administrata
+            </div>
+            {MORE_NAV.map((item, idx) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={`more-${item.to}-${idx}`}
+                  to={item.to}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    isActive(item.to) && item.label !== "Stafi"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       <div className="rounded-xl border bg-muted/40 p-3">
