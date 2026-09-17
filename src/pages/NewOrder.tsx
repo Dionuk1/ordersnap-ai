@@ -21,8 +21,8 @@ import {
   AlertTriangle, Bot, ImageUp, Keyboard, Loader2, Package, RotateCcw,
   Save, ScanText, Sparkles, User, X,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 type Engine = "gemini" | "local" | null;
@@ -30,9 +30,29 @@ type CreateMode = "screenshot" | "manual";
 
 export default function NewOrder() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const hasGeminiKey = useQuery(api.appSettings.hasGeminiKey, {});
   const createOrder = useMutation(api.orders.create);
   const parseWithGemini = useAction(api.aiParser.parseWithGemini);
+
+  // Catalog "Porosit Tani" pre-fill: /orders/new?product=:id
+  const productId = searchParams.get("product");
+  const catalogProduct = useQuery(
+    api.products.get,
+    productId ? { id: productId as any } : "skip",
+  );
+  const prefillDoneRef = useRef(false);
+  useEffect(() => {
+    if (!catalogProduct || prefillDoneRef.current) return;
+    prefillDoneRef.current = true;
+    setForm((f) => ({
+      ...f,
+      productDescription: catalogProduct.name,
+      productPrice: catalogProduct.price,
+      totalAmount: catalogProduct.price + (f.postalFee || 0),
+    }));
+    toast.info(`Produkti "${catalogProduct.name}" u shtua në porosi.`);
+  }, [catalogProduct]);
 
   const [mode, setMode] = useState<CreateMode>("manual");
   const [image, setImage] = useState<File | null>(null);

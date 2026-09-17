@@ -63,6 +63,24 @@ const schema = defineSchema(
       updatedAt: v.optional(v.number()),
     }).index("by_key", ["key"]),
 
+    // Product catalog — public storefront data resolved by slug/name
+    products: defineTable({
+      name: v.string(),
+      slug: v.string(),
+      description: v.optional(v.string()),
+      category: v.string(),
+      price: v.number(),
+      compareAtPrice: v.optional(v.number()),
+      stock: v.number(),
+      images: v.optional(v.array(v.string())),
+      specs: v.optional(v.array(v.object({ key: v.string(), value: v.string() }))),
+      isActive: v.optional(v.boolean()),
+      createdBy: v.optional(v.id("users")),
+    })
+      .index("by_slug", ["slug"])
+      .index("by_category", ["category"])
+      .index("by_active", ["isActive"]),
+
     courier_integrations: defineTable({
       userId: v.id("users"),
       provider: v.string(),

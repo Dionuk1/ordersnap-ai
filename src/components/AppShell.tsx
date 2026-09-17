@@ -5,9 +5,11 @@ import logo from "@/assets/logo.svg";
 import { cn } from "@/lib/utils";
 import {
   ClipboardList,
+  Ellipsis,
   LayoutDashboard,
   LogOut,
   Menu,
+  Package,
   Settings,
   Sparkles,
   Users,
@@ -17,12 +19,20 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 const NAV = [
-  { to: "/dashboard", label: "Paneli", icon: LayoutDashboard, adminOnly: false },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
+  { to: "/catalog", label: "Katalogu", icon: Package, adminOnly: false },
+  { to: "/orders/new", label: "Porosi e Re", icon: Sparkles, adminOnly: false },
   { to: "/orders", label: "Porositë", icon: ClipboardList, adminOnly: false },
-  { to: "/orders/new", label: "Porosi e Re (AI)", icon: Sparkles, adminOnly: false },
+  { to: "/settings", label: "Më shumë", icon: Ellipsis, adminOnly: false },
+];
+
+const MORE_NAV = [
   { to: "/settings", label: "Cilësimet", icon: Settings, adminOnly: true },
   { to: "/settings", label: "Stafi", icon: Users, adminOnly: true },
 ];
+
+/** Mobile bottom-nav excludes the current page's own entry dupes. */
+const MOBILE_NAV = NAV;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
@@ -37,11 +47,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isActive = (to: string) => {
     if (to === "/orders/new") return location.pathname === "/orders/new";
+    if (to === "/catalog") {
+      return location.pathname.startsWith("/catalog");
+    }
     if (to === "/orders") {
       return (
         location.pathname === "/orders" ||
         (location.pathname.startsWith("/orders") &&
           location.pathname !== "/orders/new")
+      );
+    }
+    if (to === "/settings") {
+      // "Më shumë" is active on settings + any secondary pages
+      return (
+        location.pathname === "/settings" ||
+        location.pathname.startsWith("/settings")
       );
     }
     return location.pathname === to;
@@ -153,9 +173,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="text-sm font-semibold">OrderSnap AI</span>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 p-4 pb-24 sm:p-6 sm:pb-6 lg:p-8 lg:pb-8">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
+
+        {/* Mobile bottom navigation */}
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-md items-stretch justify-between px-2 py-1.5">
+            {MOBILE_NAV.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.to);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={cn(
+                    "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition-colors",
+                    active
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-lg transition-colors",
+                      active && "bg-primary/10",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
   );

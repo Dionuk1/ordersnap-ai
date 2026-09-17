@@ -203,6 +203,19 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await signIn("google");
+    } catch {
+      setError(
+        "Kyçja me Google nuk është e konfiguruar. Përdorni email & fjalëkalim.",
+      );
+      setIsLoading(false);
+    }
+  };
+
   const handleRequestReset = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setResetLoading(true);
@@ -475,6 +488,34 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   ) : null}
                   Hyr në Llogari
                 </Button>
+
+                <div className="relative py-1 text-center">
+                  <span className="relative z-10 bg-card px-3 text-xs text-muted-foreground">
+                    ose
+                  </span>
+                  <div className="absolute inset-x-0 top-1/2 h-px bg-border" />
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full rounded-xl text-sm font-medium"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                >
+                  <svg viewBox="0 0 24 24" className="mr-2 size-4" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81"
+                    />
+                  </svg>
+                  Kyçuni me Google
+                </Button>
+
+                <p className="pt-1 text-center text-xs leading-relaxed text-muted-foreground">
+                  Rolat e përdoruesit (Klient · Agent · Admin) caktohen
+                  automatikisht nga administratori i kompanisë.
+                </p>
               </form>
             )}
 
