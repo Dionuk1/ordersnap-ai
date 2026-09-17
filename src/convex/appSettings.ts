@@ -19,23 +19,30 @@ import { getCurrentUser, isAdminUser } from "./users";
 
 // Absolute fallback — NEVER THROW. Mirrored client-side in NewOrder.tsx
 // (DEFAULT_APP_SETTINGS) so loading/error states show the same defaults.
+//
+// ⚠ FIELD NAMES MUST BE ASCII: Convex's result serializer rejects object
+// keys containing characters like "ë" ("Field name Kosovë has invalid
+// character 'ë'"), and that throw happens AFTER the handler returns —
+// inside the runtime serializer, where handler-level try/catch cannot
+// intercept it. This was the true root cause of the persistent
+// "appSettings:getPublicSettings Server Error". Country labels (with ë)
+// are perfectly fine as string VALUES, never as object KEYS.
 const FALLBACK_PUBLIC_SETTINGS = {
   hasGeminiKey: false,
   geminiKeyMask: null as string | null,
   defaultCurrency: "EUR",
   courierProvider: "cheetah",
   shippingRates: {
-    "Kosovë": 2.0,
-    "Shqipëri": 6.0,
-    "Maqedoni": 3.0,
+    kosovo: 2.0,
+    shqiperi: 6.0,
+    maqedoni: 3.0,
   } as Record<string, number>,
 };
 
-// Self-contained key builder (was imported from lib/order-types — kept inline
-// so this module stays dependency-free).
-function shippingRateKey(country: string): string {
-  return `shipping_rate_${country.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
-}
+// Storage keys are ASCII strings (string VALUES may contain any character —
+// only object field NAMES are restricted).
+const storageKey = (field: string) => `shipping_rate_${field}`;
+void storageKey;
 
 // Returns only whether a key is set (never the secret itself) plus a masked
 // hint. Also exposes configured per-country shipping rates (EUR) so the order
@@ -78,9 +85,9 @@ export const getPublicSettings = query({
 });
 
 const DEFAULT_SHIPPING_RATES: Record<string, number> = {
-  "Kosovë": 2.0,
-  "Shqipëri": 6.0,
-  "Maqedoni": 3.0,
+  kosovo: 2.0,
+  shqiperi: 6.0,
+  maqedoni: 3.0,
 };
 
 // Returns whether the Gemini API key is configured (used by /orders/new to
@@ -126,24 +133,44 @@ export const getSetting = query({
   },
 });
 
-// Read configured per-country shipping rates (EUR). Falls back to defaults
-// for any country that has no saved value yet. Also wrapped defensively so a
-// missing/failed read can never break the parent query.
+// Read configured per-country shipping rates (EUR). Keys are ASCII
+// (kosovo/shqiperi/maqedoni) — see the FIELD NAMES note above. Falls back
+// to defaults for any country with no saved value. Each read is wrapped
+// defensively so a failure can never break the parent query.
 async function loadShippingRates(ctx: any) {
+  // Legacy storage keys written by earlier builds, checked only when the
+  // canonical row is absent — so previously saved rates are never lost.
+  const LEGACY_KEYS: Record<string, string[]> = {
+    kosovo: ["shipping_rate_kosove"],
+    shqiperi: ["shipping_rate_shqipëri"],
+    maqedoni: [],
+  };
+
   const rates: Record<string, number> = {};
-  for (const country of ["Kosovë", "Shqipëri", "Maqedoni"]) {
+  for (const field of ["kosovo", "shqiperi", "maqedoni"]) {
     try {
+      let parsed = NaN;
       const row = await ctx.db
         .query("app_settings")
-        .withIndex("by_key", (q: any) => q.eq("key", shippingRateKey(country)))
+        .withIndex("by_key", (q: any) => q.eq("key", `shipping_rate_${field}`))
         .first();
-      const parsed = parseFloat(row?.value ?? "");
-      rates[country] =
+      parsed = parseFloat(row?.value ?? "");
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        for (const legacyKey of LEGACY_KEYS[field] ?? []) {
+          const legacyRow = await ctx.db
+            .query("app_settings")
+            .withIndex("by_key", (q: any) => q.eq("key", legacyKey))
+            .first();
+          parsed = parseFloat(legacyRow?.value ?? "");
+          if (Number.isFinite(parsed) && parsed > 0) break;
+        }
+      }
+      rates[field] =
         Number.isFinite(parsed) && parsed > 0
           ? parsed
-          : DEFAULT_SHIPPING_RATES[country];
+          : DEFAULT_SHIPPING_RATES[field];
     } catch {
-      rates[country] = DEFAULT_SHIPPING_RATES[country];
+      rates[field] = DEFAULT_SHIPPING_RATES[field];
     }
   }
   return rates;

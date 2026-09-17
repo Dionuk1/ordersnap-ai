@@ -7,6 +7,7 @@ import {
   ALBANIAN_CITIES,
   MACEDONIAN_CITIES,
   EMPTY_PARSED_ORDER,
+  shippingRateField,
   type ParsedOrder,
 } from "@/lib/order-types";
 import { parseOrderTextLocal } from "@/lib/local-parser";
@@ -32,14 +33,17 @@ type Engine = "gemini" | "local" | null;
 type CreateMode = "screenshot" | "manual";
 
 /**
- * Absolute client-side settings fallback — mirrors the server's zero-throw
- * default. useQuery returns undefined while loading (and on query errors);
- * this object guarantees the component tree never sees a missing shape.
+ * Static default configuration — the complete client-side mirror of the
+ * server's zero-throw FALLBACK_PUBLIC_SETTINGS. Prevents any loading/error
+ * state from reaching the component tree; rendering is fully decoupled from
+ * the settings query (which itself can no longer throw).
  */
 const DEFAULT_APP_SETTINGS = {
   hasGeminiKey: false,
   geminiKeyMask: null as string | null,
-  shippingRates: { "Kosovë": 2.0, "Shqipëri": 6.0, "Maqedoni": 3.0 } as Record<string, number>,
+  defaultCurrency: "EUR",
+  courierProvider: "cheetah",
+  shippingRates: { kosovo: 2.0, shqiperi: 6.0, maqedoni: 3.0 } as Record<string, number>,
 };
 
 function NewOrderInner() {
@@ -84,12 +88,14 @@ function NewOrderInner() {
   const lastCountryRef = useRef(form.country);
   useEffect(() => {
     if (!publicSettings?.shippingRates) return;
+    // Rates are keyed by canonical ASCII fields (kosovo/shqiperi/maqedoni);
+    // resolve the display country through the shared mapping.
     const rates = publicSettings.shippingRates;
     const prev = lastCountryRef.current;
     if (prev === form.country) return;
-    const prevRate = rates[prev];
+    const prevRate = rates[shippingRateField(prev)];
     if (form.postalFee === prevRate || !form.postalFee) {
-      const newRate = rates[form.country] ?? 0;
+      const newRate = rates[shippingRateField(form.country)] ?? 0;
       setForm((f) => ({
         ...f,
         country: form.country,

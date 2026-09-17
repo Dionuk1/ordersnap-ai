@@ -255,24 +255,32 @@ export const getGlobalConfig = query({
   args: {},
   handler: async (ctx) => {
     await requireSuperAdmin(ctx);
-    const keys = [
-      "gemini_api_key",
-      "shipping_rate_kosove",
-      "shipping_rate_shqiperi",
-      "shipping_rate_maqedoni",
+    // (key, as): `key` is the storage key to read; `as` is the ASCII-safe
+    // field name used in the response — the result map is keyed by these
+    // names, and Convex rejects non-ASCII object field names (the same
+    // serializer rule that broke getPublicSettings).
+    const keys: { key: string; as: string }[] = [
+      { key: "gemini_api_key", as: "gemini_api_key" },
+      { key: "shipping_rate_kosovo", as: "shipping_rate_kosovo" },
+      { key: "shipping_rate_shqiperi", as: "shipping_rate_shqiperi" },
+      { key: "shipping_rate_maqedoni", as: "shipping_rate_maqedoni" },
+      // Legacy keys from earlier builds — surfaced under ASCII aliases so
+      // saved values are not silently lost. New writes use canonical keys.
+      { key: "shipping_rate_kosove", as: "shipping_rate_kosove_legacy" },
+      { key: "shipping_rate_shqipëri", as: "shipping_rate_shqiperi_legacy" },
     ];
     const config: Record<string, string | null> = {};
-    for (const key of keys) {
+    for (const { key, as } of keys) {
       const row = await ctx.db
         .query("app_settings")
         .withIndex("by_key", (q) => q.eq("key", key))
         .first();
       if (!row?.value) {
-        config[key] = null;
+        config[as] = null;
       } else if (key === "gemini_api_key") {
-        config[key] = `${row.value.slice(0, 4)}••••${row.value.slice(-4)}`;
+        config[as] = `${row.value.slice(0, 4)}••••${row.value.slice(-4)}`;
       } else {
-        config[key] = row.value;
+        config[as] = row.value;
       }
     }
     return config;

@@ -407,8 +407,8 @@ function AnalyticsTab() {
 
 const CONFIG_FIELDS: { key: string; label: string; placeholder: string; secret?: boolean }[] = [
   { key: "gemini_api_key", label: "Gemini API Key (global fallback)", placeholder: "AIza…", secret: true },
-  { key: "shipping_rate_kosove", label: "Tarifa Kosovë (€)", placeholder: "2.00" },
-  { key: "shipping_rate_shqiperi", label: "Tarifa Shqipëri (€)", placeholder: "3.00" },
+  { key: "shipping_rate_kosovo", label: "Tarifa Kosovë (€)", placeholder: "2.00" },
+  { key: "shipping_rate_shqiperi", label: "Tarifa Shqipëri (€)", placeholder: "6.00" },
   { key: "shipping_rate_maqedoni", label: "Tarifa Maqedoni (€)", placeholder: "3.00" },
 ];
 

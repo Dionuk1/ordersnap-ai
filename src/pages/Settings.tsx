@@ -29,7 +29,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { COUNTRIES, COUNTRY_FLAGS, COUNTRY_LABELS } from "@/lib/order-types";
+import {
+  COUNTRIES,
+  COUNTRY_FLAGS,
+  COUNTRY_LABELS,
+  shippingRateKey,
+} from "@/lib/order-types";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Bot,
@@ -189,10 +194,13 @@ function ShippingRatesSection() {
 
   useEffect(() => {
     if (settings?.shippingRates) {
+      const rates = settings.shippingRates as Record<string, number>;
+      // Read by canonical ASCII field, tolerating legacy diacritic keys.
+      const legacy = rates as Record<string, number | undefined>;
       setRates({
-        "Kosovë": String(settings.shippingRates["Kosovë"] ?? 2),
-        "Shqipëri": String(settings.shippingRates["Shqipëri"] ?? 6),
-        "Maqedoni": String(settings.shippingRates["Maqedoni"] ?? 3),
+        "Kosovë": String(rates.kosovo ?? legacy["Kosovë"] ?? 2),
+        "Shqipëri": String(rates.shqiperi ?? legacy["Shqipëri"] ?? 6),
+        "Maqedoni": String(rates.maqedoni ?? legacy["Maqedoni"] ?? 3),
       });
     }
   }, [settings]);
@@ -208,7 +216,7 @@ function ShippingRatesSection() {
           setSaving(false);
           return;
         }
-        await setSetting({ key: `shipping_rate_${country.toLowerCase().replace(/[^a-z0-9]/g, "")}`, value: String(num) });
+        await setSetting({ key: shippingRateKey(country), value: String(num) });
       }
       toast.success("Tarifat postare u ruajtën.");
     } catch (err) {

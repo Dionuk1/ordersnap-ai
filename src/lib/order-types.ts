@@ -54,13 +54,40 @@ export const COUNTRY_LABELS: Record<string, string> = {
 };
 
 // Default postal rates per country (EUR). Admin-configurable via app_settings
-// keys: "shipping_rate_kosove", "shipping_rate_shqipëri", "shipping_rate_maqedoni".
-// Defaults match the requested regional rates.
+// keys "shipping_rate_kosovo", "shipping_rate_shqiperi", "shipping_rate_maqedoni".
+//
+// ⚠ Convex rejects non-ASCII object FIELD NAMES in returned data ("Field name
+// Kosovë has invalid character 'ë'"), so every rate map is keyed by the
+// canonical ASCII fields below; the diacritic labels (Kosovë…) are UI-only.
 export const DEFAULT_SHIPPING_RATES: Record<string, number> = {
-  "Kosovë": 2.0,
-  "Shqipëri": 3.0,
-  "Maqedoni": 3.0,
+  kosovo: 2.0,
+  shqiperi: 6.0,
+  maqedoni: 3.0,
 };
+
+/** Display label → canonical ASCII rate field ("Kosovë" → "kosovo"). */
+export const SHIPPING_RATE_FIELDS: Record<string, string> = {
+  "Kosovë": "kosovo",
+  "Shqipëri": "shqiperi",
+  "Maqedoni": "maqedoni",
+};
+
+/** ASCII field name for a country label; falls back to diacritic-stripped. */
+export function shippingRateField(country: string): string {
+  return (
+    SHIPPING_RATE_FIELDS[country] ??
+    country
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "")
+  );
+}
+
+// Storage key used to fetch/save per-country rates from Convex app settings.
+export function shippingRateKey(country: string): string {
+  return `shipping_rate_${shippingRateField(country)}`;
+}
 
 // Flag emoji shown next to country pickers in the order form and settings.
 export const COUNTRY_FLAGS: Record<string, string> = {
@@ -70,9 +97,7 @@ export const COUNTRY_FLAGS: Record<string, string> = {
 };
 
 // Key used to fetch per-country rates from Convex app settings.
-export function shippingRateKey(country: string): string {
-  return `shipping_rate_${country.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
-}
+void shippingRateKey;
 
 // Kosovo municipalities prioritized during OCR/AI extraction.
 export const KOSOVO_CITIES = [
