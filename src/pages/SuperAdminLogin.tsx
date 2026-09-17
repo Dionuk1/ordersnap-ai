@@ -54,42 +54,59 @@ function SuperAdminLogin() {
         <Loader2 className="size-6 animate-spin text-slate-400" />
       </div>
     );
-  }
-
-  if (ready) {
+  }  if (ready) {
     return <Navigate to="/admin" replace />;
   }
+
+  // Exact master credentials — the ONLY identity accepted on this portal.
+  const MASTER_EMAIL = "admin@ordersnap.ai";
+  const MASTER_PASSWORD = "SnapAdmin#2026!SecureKey";
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
     setError(null);
+
+    // ── 1. Strict exact-match gate: bypass ALL tenant/store lookup ──
+    const inputEmail = email.trim().toLowerCase();
+    if (inputEmail !== MASTER_EMAIL || password !== MASTER_PASSWORD) {
+      // Never touch tenant databases, never redirect to business /login.
+      setError("Kredencialet e Super Adminit janë të pasakta.");
+      setLoading(false);
+      return;
+    }
+
+    // ── 2. Credentials match → authenticate session directly ──
     try {
       await signIn("password", {
-        email: email.trim().toLowerCase(),
-        password,
+        email: MASTER_EMAIL,
+        password: MASTER_PASSWORD,
         flow: "signIn",
       });
-      // Assign the Super Admin flag immediately after sign-in (idempotent).
-      const result = await seed();
-      if (result === "already-seeded" || result === "promoted") {
-        toast.success("Mirë se vini, Super Admin.");
-      } else {
-        // not-eligible: wrong email used
-        toast.error("Këto kredenciale nuk përmbajnë qasje Super Admin.", {
-          description: "Përdorni admin@ordersnap.ai.",
+    } catch {
+      // First-ever login: the seeded account may not exist yet — create it
+      // via signUp, then continue. Still strictly the master identity.
+      try {
+        await signIn("password", {
+          email: MASTER_EMAIL,
+          password: MASTER_PASSWORD,
+          flow: "signUp",
         });
+      } catch {
+        setError("Kredencialet e Super Adminit janë të pasakta.");
+        setLoading(false);
         return;
       }
-      navigate("/admin", { replace: true });
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.includes("Invalid")
-          ? "Email ose fjalëkalim i pasaktë."
-          : "Kyçja dështoi. Provoni përsëri.",
-      );
-      setLoading(false);
     }
+
+    // ── 3. Immediate role elevation: isSuperAdmin = true ──
+    try {
+      await seed();
+    } catch {
+      // non-fatal — the isSuperAdmin guard on /admin still enforces access.
+    }
+    toast.success("Mirë se vini, Super Admin.");
+    navigate("/admin", { replace: true });
   };
 
   return (
