@@ -40,6 +40,7 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
       activeTenantId: v.optional(v.id("tenants")),
+      isSuperAdmin: v.optional(v.boolean()),
     }).index("email", ["email"]),
 
     // Multi-tenant workspaces resolved via /login?tenant={slug}
@@ -50,6 +51,8 @@ const schema = defineSchema(
       logoUrl: v.optional(v.string()),
       accentColor: v.optional(v.string()),
       isActive: v.optional(v.boolean()),
+      // "active" | "suspended" — controls whether the tenant can operate.
+      status: v.optional(v.union(v.literal("active"), v.literal("suspended"))),
       ownerEmail: v.optional(v.string()),
       createdBy: v.optional(v.id("users")),
     })

@@ -1,6 +1,6 @@
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/AppShell";
-import { RequireAdmin } from "@/components/RequireAdmin";
+import { RequireSuperAdmin } from "@/components/RequireSuperAdmin";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,52 +28,45 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatEuroFull } from "@/lib/order-types";
-import { cn } from "@/lib/utils";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
-  Archive,
-  ArchiveRestore,
-  Boxes,
-  ChevronDown,
-  ChevronUp,
-  FileClock,
+  Building2,
+  Copy,
+  KeyRound,
   Loader2,
-  Pencil,
-  Plus,
-  RefreshCcw,
+  LogIn,
+  MailWarning,
   ShieldCheck,
-  Trash2,
-  Truck,
+  Store,
   Users,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-type Tab = "overview" | "products" | "users" | "audit";
+type Tab = "companies" | "analytics" | "config";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "overview", label: "Përmbledhja" },
-  { key: "products", label: "Produktet" },
-  { key: "users", label: "Përdoruesit" },
-  { key: "audit", label: "Audit Trail" },
+  { key: "companies", label: "Kompanitë" },
+  { key: "analytics", label: "Analitikat" },
+  { key: "config", label: "Konfigurimi Global" },
 ];
 
-export default function Admin() {
-  const [tab, setTab] = useState<Tab>("overview");
+export default function SuperAdmin() {
+  const [tab, setTab] = useState<Tab>("companies");
 
   return (
     <AppShell>
-      <RequireAdmin>
+      <RequireSuperAdmin>
         <div className="flex flex-col gap-6">
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
                 <ShieldCheck className="size-6 text-primary" />
-                Admin Control Panel
+                Super Admin Portal
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Qarkullim i plotë i sistemit — vetëm për administratorët.
+                Menaxhimi i kompanive, kredencialeve dhe shëndetit të sistemit SaaS.
               </p>
             </div>
             <nav className="flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
@@ -82,12 +74,11 @@ export default function Admin() {
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={cn(
-                    "rounded-md px-3.5 py-2 text-sm font-medium transition-all",
+                  className={`rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
                     tab === t.key
                       ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
                   {t.label}
                 </button>
@@ -95,187 +86,95 @@ export default function Admin() {
             </nav>
           </header>
 
-          {tab === "overview" && <OverviewTab />}
-          {tab === "products" && <ProductsTab />}
-          {tab === "users" && <UsersTab />}
-          {tab === "audit" && <AuditTab />}
+          {tab === "companies" && <CompaniesTab />}
+          {tab === "analytics" && <AnalyticsTab />}
+          {tab === "config" && <ConfigTab />}
         </div>
-      </RequireAdmin>
+      </RequireSuperAdmin>
     </AppShell>
   );
 }
 
-// ── Overview ───────────────────────────────────────────────────────────────
+// ── Companies ───────────────────────────────────────────────────────────────
 
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <Card className="border-border/60">
-      <CardContent className="px-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-1.5 text-2xl font-bold tracking-tight">{value}</p>
-        {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}
+function CompaniesTab() {
+  const companies = useQuery(api.superAdmin.listCompanies, {});
+  const setStatus = useMutation(api.superAdmin.setCompanyStatus);
+  const impersonate = useMutation(api.superAdmin.impersonate);
+  const generateTemp = useAction(api.superAdmin.generateTempPassword);
+  const applyTemp = useMutation(api.superAdmin.applyTempPassword);
+  const logReset = useMutation(api.superAdmin.logResetEmail);
 
-function OverviewTab() {
-  const data = useQuery(api.admin.overview, {});
-  const cheetah = useQuery(api.cheetah.getConfig, {});
-
-  if (data === undefined) {
-    return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-28" />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Përdorues të regjistruar"
-          value={String(data.totalUsers)}
-          sub={`${data.totalTenants} kompani (tenant)`}
-        />
-        <StatCard
-          label="Të ardhura (dorëzuar)"
-          value={formatEuroFull(data.revenue)}
-          sub={`${formatEuroFull(data.pipeline)} në rrugë`}
-        />
-        <StatCard
-          label="Porosi totale"
-          value={String(data.totalOrders)}
-          sub={`${data.ordersToday} në 24 orët e fundit`}
-        />
-        <StatCard
-          label="Produkte në katalog"
-          value={String(data.totalProducts)}
-          sub={`${data.activeProducts} aktive`}
-        />
-      </div>
-
-      <Card className="border-border/60">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Truck className="size-4" /> Statusi i Postës (Cheetah)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Konfigurimi</p>
-            <Badge variant={data.courier.configured ? "default" : "secondary"}>
-              {data.courier.configured ? "Konfiguruar" : "Nuk është konfiguruar"}
-            </Badge>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Dërgesa automatike</p>
-            <p className="font-semibold">
-              {cheetah?.autoDispatch ? "Aktive" : "Çaktivizuar"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Dërgesa të suksesshme</p>
-            <p className="font-semibold">{data.courier.dispatched}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Gabime dërgimi</p>
-            <p className="font-semibold">{data.courier.dispatchErrors}</p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ── Products CRUD ──────────────────────────────────────────────────────────
-
-function ProductsTab() {
-  const products = useQuery(api.admin.listAllProducts, {});
-  const createProduct = useMutation(api.admin.createProduct);
-  const updateProduct = useMutation(api.admin.updateProduct);
-  const setStock = useMutation(api.admin.setStock);
-  const archiveProduct = useMutation(api.admin.archiveProduct);
-  const removeProduct = useMutation(api.admin.removeProduct);
-
-  const [editing, setEditing] = useState<null | {
-    id?: string;
+  const [pwModal, setPwModal] = useState<null | {
+    userId: string | null;
+    email: string | null;
     name: string;
-    category: string;
-    price: string;
-    stock: string;
-    description: string;
   }>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const openNew = () =>
-    setEditing({ name: "", category: "Veshje", price: "", stock: "10", description: "" });
+  const openPasswordModal = (row: {
+    ownerId: string | null;
+    ownerEmail: string | null;
+    name: string;
+  }) => {
+    setTempPassword(null);
+    setPwModal({
+      userId: row.ownerId,
+      email: row.ownerEmail,
+      name: row.name,
+    });
+  };
 
-  const handleSave = async () => {
-    if (!editing) return;
-    if (!editing.name.trim() || !editing.category.trim()) {
-      toast.error("Emri dhe kategoria janë të detyrueshme.");
-      return;
-    }
+  const handleGenerate = async () => {
+    if (!pwModal?.userId) return;
     setBusy(true);
     try {
-      const payload = {
-        name: editing.name.trim(),
-        category: editing.category.trim(),
-        price: Number(editing.price.replace(",", ".")) || 0,
-        stock: Number(editing.stock) || 0,
-        description: editing.description.trim() || undefined,
-      };
-      if (editing.id) {
-        await updateProduct({ id: editing.id as never, ...payload });
-        toast.success("Produkti u përditësua.");
-      } else {
-        await createProduct({ ...payload, slug: "" });
-        toast.success("Produkti u shtua në katalog.");
-      }
-      setEditing(null);
+      const temp = await generateTemp({});
+      await applyTemp({ userId: pwModal.userId as never, tempPassword: temp });
+      setTempPassword(temp);
+      toast.success("Fjalëkalimi i përkohshëm u gjenerua.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Ruajtja dështoi.");
+      toast.error(err instanceof Error ? err.message : "Dështoi.");
     } finally {
       setBusy(false);
     }
   };
 
-  const handleStockDelta = async (id: string, current: number, delta: number) => {
+  const handleResetEmail = async () => {
+    if (!pwModal?.userId || !pwModal.email) return;
+    setBusy(true);
     try {
-      await setStock({ id: id as never, stock: Math.max(0, current + delta) });
+      await logReset({ userId: pwModal.userId as never, email: pwModal.email });
+      toast.success(`Email-i i rivendosjes u dërgua te ${pwModal.email}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Dështoi.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImpersonate = async (tenantId: string, name: string) => {
+    try {
+      await impersonate({ tenantId: tenantId as never });
+      toast.success(`Tani shikoni si kompania "${name}".`);
+      window.location.href = "/dashboard";
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Dështoi.");
     }
   };
 
-  const handleArchive = async (id: string, isActive: boolean) => {
+  const handleStatusToggle = async (
+    tenantId: string,
+    current: string,
+    name: string,
+  ) => {
+    const next = current === "suspended" ? "active" : "suspended";
     try {
-      await archiveProduct({ id: id as never, archive: isActive });
-      toast.success(isActive ? "Produkti u arkivua." : "Produkti u rikthye.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Dështoi.");
-    }
-  };
-
-  const handleRemove = async (id: string, name: string) => {
-    if (!window.confirm(`Të fshihet përgjithmonë "${name}"?`)) return;
-    try {
-      await removeProduct({ id: id as never });
-      toast.success("Produkti u fshij.");
+      await setStatus({ tenantId: tenantId as never, status: next });
+      toast.success(
+        `"${name}" u ${next === "suspended" ? "pezullua" : "aktivizua"}.`,
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Dështoi.");
     }
@@ -283,107 +182,96 @@ function ProductsTab() {
 
   return (
     <Card className="border-border/60">
-      <CardHeader className="flex-row items-center justify-between">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Boxes className="size-4" /> Menaxhimi i Katalogut
-          </CardTitle>
-          <CardDescription>Shto, edito, ndrysho stokun ose arkivo produkte.</CardDescription>
-        </div>
-        <Button onClick={openNew} size="sm">
-          <Plus className="mr-1.5 size-4" /> Produkt i re
-        </Button>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Building2 className="size-4" /> Kompanitë e Regjistruara
+        </CardTitle>
+        <CardDescription>
+          Menaxho statuset, rikthe kredencialet dhe inspekto tenant-et.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {products === undefined ? (
+        {companies === undefined ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : products.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Katalogu është bosh.</p>
+        ) : companies.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nuk ka kompani të regjistruara.</p>
         ) : (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Produkti</TableHead>
-                  <TableHead>Kategoria</TableHead>
-                  <TableHead>Çmimi</TableHead>
-                  <TableHead>Stoku</TableHead>
+                  <TableHead>Emri i Store</TableHead>
+                  <TableHead>Slug</TableHead>
+                  <TableHead>Email i Adminit</TableHead>
                   <TableHead>Statusi</TableHead>
+                  <TableHead>Krijuar në</TableHead>
                   <TableHead className="text-right">Veprime</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {products.map((p) => (
-                  <TableRow key={p._id}>
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{p.category}</TableCell>
-                    <TableCell className="text-sm">{formatEuroFull(p.price)}</TableCell>
+                {companies.map((c) => (
+                  <TableRow key={c._id}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost" size="icon" className="size-7"
-                          onClick={() => handleStockDelta(p._id, p.stock, -1)}
-                        >
-                          <ChevronDown className="size-4" />
-                        </Button>
-                        <span className="min-w-8 text-center text-sm font-semibold tabular-nums">
-                          {p.stock}
-                        </span>
-                        <Button
-                          variant="ghost" size="icon" className="size-7"
-                          onClick={() => handleStockDelta(p._id, p.stock, +1)}
-                        >
-                          <ChevronUp className="size-4" />
-                        </Button>
-                      </div>
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                        {c.slug}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {c.ownerEmail ?? "—"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Switch
-                          checked={p.isActive !== false}
-                          onCheckedChange={() => handleArchive(p._id, p.isActive !== false)}
+                          checked={c.status !== "suspended"}
+                          onCheckedChange={() =>
+                            handleStatusToggle(c._id, c.status, c.name)
+                          }
                         />
-                        <span className="text-xs text-muted-foreground">
-                          {p.isActive !== false ? "Aktiv" : "Arkivuar"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost" size="icon" className="size-8"
-                          onClick={() =>
-                            setEditing({
-                              id: p._id,
-                              name: p.name,
-                              category: p.category,
-                              price: String(p.price),
-                              stock: String(p.stock),
-                              description: p.description ?? "",
-                            })
+                        <Badge
+                          className={
+                            c.status === "suspended"
+                              ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
                           }
                         >
-                          <Pencil className="size-4" />
+                          {c.status === "suspended" ? "Pezulluar" : "Aktiv"}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(c.createdAt).toLocaleDateString("sq-XK")}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openPasswordModal({
+                              ownerId: c.ownerId,
+                              ownerEmail: c.ownerEmail,
+                              name: c.name,
+                            })
+                          }
+                          disabled={!c.ownerId}
+                          title="Ndrysho Fjalëkalimin"
+                        >
+                          <KeyRound className="mr-1 size-3.5" />
+                          Ndrysho Fjalëkalimin
                         </Button>
                         <Button
-                          variant="ghost" size="icon" className="size-8 text-muted-foreground"
-                          onClick={() => handleArchive(p._id, p.isActive !== false)}
-                          title={p.isActive !== false ? "Arkivo" : "Rikthe"}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleImpersonate(c._id, c.name)}
+                          title="Hyr si kjo kompani"
                         >
-                          {p.isActive !== false
-                            ? <Archive className="size-4" />
-                            : <ArchiveRestore className="size-4" />}
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon"
-                          className="size-8 text-destructive"
-                          onClick={() => handleRemove(p._id, p.name)}
-                        >
-                          <Trash2 className="size-4" />
+                          <LogIn className="mr-1 size-3.5" />
+                          Hyr si kjo kompani
                         </Button>
                       </div>
                     </TableCell>
@@ -395,98 +283,156 @@ function ProductsTab() {
         )}
       </CardContent>
 
-      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+      {/* Password modal */}
+      <Dialog
+        open={pwModal !== null}
+        onOpenChange={(open) => !open && setPwModal(null)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing?.id ? "Edito produktin" : "Produkt i re"}</DialogTitle>
+            <DialogTitle>
+              Ndrysho Fjalëkalimin — {pwModal?.name}
+            </DialogTitle>
           </DialogHeader>
-          {editing && (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Emri</Label>
-                <Input
-                  value={editing.name}
-                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                  placeholder="Patika Nike Air"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Kategoria</Label>
-                  <Input
-                    value={editing.category}
-                    onChange={(e) => setEditing({ ...editing, category: e.target.value })}
-                    placeholder="Këpucë"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Çmimi (€)</Label>
-                  <Input
-                    type="number" min="0" step="0.5"
-                    value={editing.price}
-                    onChange={(e) => setEditing({ ...editing, price: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Stoku</Label>
-                  <Input
-                    type="number" min="0"
-                    value={editing.stock}
-                    onChange={(e) => setEditing({ ...editing, stock: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Përshkrimi</Label>
-                <Input
-                  value={editing.description}
-                  onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-                  placeholder="Përshkrim i shkurtër"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setEditing(null)}>
-                  Anulo
-                </Button>
-                <Button onClick={handleSave} disabled={busy}>
-                  {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  Ruaj
-                </Button>
-              </div>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Admin i kompanisë:{" "}
+              <span className="font-medium text-foreground">{pwModal?.email ?? "—"}</span>
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <Button onClick={handleGenerate} disabled={busy || !pwModal?.userId}>
+                {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <KeyRound className="mr-2 size-4" />}
+                Auto-Gjenero Fjalëkalim të Përkohshëm
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleResetEmail}
+                disabled={busy || !pwModal?.userId || !pwModal?.email}
+              >
+                <MailWarning className="mr-2 size-4" />
+                Dërgo Email Rivendosjeje
+              </Button>
             </div>
-          )}
+
+            {tempPassword && (
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Fjalëkalimi i përkohshëm
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded bg-muted px-3 py-2 font-mono text-sm">
+                    {tempPassword}
+                  </code>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(tempPassword);
+                      toast.success("U kopjua në clipboard!");
+                    }}
+                    title="Kopjo"
+                  >
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Kopjojeni dhe ndajeni me adminin e kompanisë në mënyrë të sigurt.
+                  Duhet ta ndryshojë pas hyrjes së parë.
+                </p>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </Card>
   );
 }
 
-// ── User Directory ─────────────────────────────────────────────────────────
+// ── Analytics ───────────────────────────────────────────────────────────────
 
-const ROLE_OPTIONS = [
-  { value: "admin", label: "Administrator i Kompanisë" },
-  { value: "user", label: "Përgjegjës" },
-  { value: "member", label: "Klient" },
-] as const;
+function KpiCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: typeof Store;
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
+  return (
+    <Card className="border-border/60">
+      <CardContent className="flex items-center gap-3 px-5">
+        <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </p>
+          <p className="text-xl font-bold tabular-nums">{value}</p>
+          {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
-const ROLE_BADGE: Record<string, string> = {
-  admin: "bg-slate-100 text-blue-700 font-semibold dark:bg-slate-800 dark:text-blue-400",
-  user: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
-  member: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-};
+function AnalyticsTab() {
+  const stats = useQuery(api.superAdmin.platformStats, {});
 
-function UsersTab() {
-  const users = useQuery(api.admin.listUsers, {});
-  const setUserRole = useMutation(api.admin.setUserRole);
+  if (stats === undefined) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-24" />
+        ))}
+      </div>
+    );
+  }
 
-  const handleChange = async (userId: string, role: string) => {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <KpiCard icon={Store} label="Total Stores" value={stats.totalStores} sub={`${stats.activeStores} aktivë · ${stats.suspendedStores} të pezulluar`} />
+      <KpiCard icon={Zap} label="Porosi të AI-Parsuara" value={stats.aiParsedOrders} sub={`${stats.totalOrders} porosi gjithsej`} />
+      <KpiCard icon={Users} label="Adminë Aktivë (Mujorë)" value={stats.activeMonthlyAdmins} sub={`${stats.totalUsers} përdorues total`} />
+      <KpiCard icon={Building2} label="Ngjarje Auditimi" value={stats.auditEvents} sub="regjistruar platformë-wise" />
+    </div>
+  );
+}
+
+// ── Global Config ───────────────────────────────────────────────────────────
+
+const CONFIG_FIELDS: { key: string; label: string; placeholder: string; secret?: boolean }[] = [
+  { key: "gemini_api_key", label: "Gemini API Key (global fallback)", placeholder: "AIza…", secret: true },
+  { key: "shipping_rate_kosove", label: "Tarifa Kosovë (€)", placeholder: "2.00" },
+  { key: "shipping_rate_shqiperi", label: "Tarifa Shqipëri (€)", placeholder: "3.00" },
+  { key: "shipping_rate_maqedoni", label: "Tarifa Maqedoni (€)", placeholder: "3.00" },
+];
+
+function ConfigTab() {
+  const config = useQuery(api.superAdmin.getGlobalConfig, {});
+  const setConfig = useMutation(api.superAdmin.setGlobalConfig);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  const handleSave = async (key: string) => {
+    const value = (values[key] ?? "").trim();
+    if (!value) {
+      toast.error("Shkruani një vlerë.");
+      return;
+    }
+    setBusyKey(key);
     try {
-      await setUserRole({ userId: userId as never, role: role as "admin" | "user" | "member" });
-      toast.success("Roli u përditësua.");
+      await setConfig({ key, value });
+      toast.success("Konfigurimi u ruajt.");
+      setValues((v) => ({ ...v, [key]: "" }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Dështoi.");
+    } finally {
+      setBusyKey(null);
     }
   };
 
@@ -494,145 +440,46 @@ function UsersTab() {
     <Card className="border-border/60">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Users className="size-4" /> Direktoria e Përdoruesve
+          <ShieldCheck className="size-4" /> Konfigurimi Global i Sistemit
         </CardTitle>
         <CardDescription>
-          Promovo/ul rolet: Klient ↔ Përgjegjës ↔ Administrator i Kompanisë. Roli i adminit nuk mund të hiqet nga veti.
+          Çelësat fallback API, tarifat globale dhe parametrat e platformës.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        {users === undefined ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : users.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nuk ka përdorues të regjistruar.</p>
+      <CardContent className="space-y-4">
+        {config === undefined ? (
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Përdoruesi</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Kompania</TableHead>
-                  <TableHead>Roli</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u._id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold uppercase text-primary">
-                          {(u.name ?? u.email ?? "U").slice(0, 2)}
-                        </div>
-                        <span className="font-medium">{u.name ?? "—"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{u.email ?? "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {u.companyName ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs",
-                            ROLE_BADGE[u.role] ?? ROLE_BADGE.member,
-                          )}
-                        >
-                          {ROLE_OPTIONS.find((r) => r.value === u.role)?.label ?? u.role}
-                        </span>
-                        <select
-                          value={u.role}
-                          onChange={(e) => handleChange(u._id, e.target.value)}
-                          className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs"
-                        >
-                          {ROLE_OPTIONS.map((r) => (
-                            <option key={r.value} value={r.value}>
-                              {r.label}
-                            </option>
-                          ))}
-                        </select>
-                        <RefreshCcw className="hidden size-3 text-muted-foreground" />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Audit Trail ────────────────────────────────────────────────────────────
-
-const ACTION_LABELS: Record<string, { label: string; className: string }> = {
-  "order.created": { label: "Porosi e re", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
-  "cheetah.config_saved": { label: "Cheetah config", className: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
-  "user.role_changed": { label: "Rol ndryshuar", className: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
-};
-
-function AuditTab() {
-  const logs = useQuery(api.admin.auditTrail, { limit: 60 });
-
-  return (
-    <Card className="border-border/60">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FileClock className="size-4" /> Audit Trail (Real-time)
-        </CardTitle>
-        <CardDescription>
-          Monitorim i drejtpërdrejtë i krijimit të porosive, dërgesave te posta dhe ndryshimeve të konfigurimit.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {logs === undefined ? (
-          <div className="space-y-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nuk ka aktivitet të regjistruar.</p>
-        ) : (
-          <div className="space-y-2">
-            {logs.map((log) => {
-              const meta = ACTION_LABELS[log.action];
-              return (
-                <div
-                  key={log._id}
-                  className="flex items-start gap-3 rounded-lg border bg-muted/20 px-3 py-2.5"
+          CONFIG_FIELDS.map((field) => (
+            <div key={field.key} className="space-y-1.5">
+              <Label htmlFor={field.key}>{field.label}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id={field.key}
+                  type={field.secret ? "password" : "text"}
+                  placeholder={
+                    config[field.key]
+                      ? `Aktualisht: ${config[field.key]}`
+                      : field.placeholder
+                  }
+                  value={values[field.key] ?? ""}
+                  onChange={(e) =>
+                    setValues((v) => ({ ...v, [field.key]: e.target.value }))
+                  }
+                />
+                <Button
+                  onClick={() => handleSave(field.key)}
+                  disabled={busyKey === field.key}
                 >
-                  <span
-                    className={cn(
-                      "mt-0.5 inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      meta?.className ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-                    )}
-                  >
-                    {meta?.label ?? log.action}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">{log.details}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {log.user ?? "Sistemi"} ·{" "}
-                      {new Date(log._creationTime).toLocaleString("sq-XK", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  {busyKey === field.key ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    "Ruaj"
+                  )}
+                </Button>
+              </div>
+            </div>
+          ))
         )}
       </CardContent>
     </Card>
