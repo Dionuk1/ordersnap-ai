@@ -43,8 +43,10 @@ export function RequireSuperAdmin({ children }: { children: ReactNode }) {
 
   if (isLoading || check === undefined) return null;
 
+  // Unauthenticated access MUST go to the dedicated Super Admin login —
+  // never the standard B2B /login page.
   if (!isAuthenticated) {
-    return <Navigate to="/login?returnTo=/admin" replace />;
+    return <Navigate to="/admin/login" replace />;
   }
 
   // Give the seed mutation one tick to promote the eligible email before
@@ -56,10 +58,12 @@ export function RequireSuperAdmin({ children }: { children: ReactNode }) {
     if (!warnedRef.current) {
       warnedRef.current = true;
       toast.error("Akses i paautorizuar", {
-        description: "Vetëm Super Adminët kanë qasje në këtë portal.",
+        description: "Vetëm Super Adminët kanë qasje. Përdorni /admin/login.",
       });
     }
-    return <Navigate to="/login?returnTo=/admin" replace />;
+    // Signed in as a regular company admin → still route to the isolated
+    // Super Admin login, not the tenant login.
+    return <Navigate to="/admin/login" replace />;
   }
 
   return children;

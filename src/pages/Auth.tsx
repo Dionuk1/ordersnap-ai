@@ -255,17 +255,34 @@ function Auth({ redirectAfterAuth, initialView }: AuthProps = {}) {
       setRegisterError("Shkruani emrin e kompanisë.");
       return;
     }
-    if (registerPassword !== registerConfirm) {
+    // Trim BOTH values before comparing — raw values can carry stray
+    // whitespace (autofill/mobile keyboards) and false-negative the match.
+    if (registerPassword.trim() !== registerConfirm.trim()) {
       setRegisterError("Fjalëkalimet nuk përputhen.");
+      return;
+    }
+    if (registerPassword.trim().length < 8) {
+      setRegisterError("Fjalëkalimi duhet të ketë së paku 8 karaktere.");
       return;
     }
     setRegisterLoading(true);
     setRegisterError(null);
+
+    // Super Admin accounts are provisioned exclusively via /admin/login —
+    // never through the public company registration form.
+    if (emailTrimmed === "admin@ordersnap.ai") {
+      setRegisterError(
+        "Kjo email i përket Super Adminit. Përdorni /admin/login për hyrje.",
+      );
+      setRegisterLoading(false);
+      return;
+    }
+
     try {
       // 1) Create the auth account (Company Admin).
       await signIn("password", {
         email: emailTrimmed,
-        password: registerPassword,
+        password: registerPassword.trim(),
         flow: "signUp",
       });
       // 2) Initialize the tenant store with a slug derived from the name.
