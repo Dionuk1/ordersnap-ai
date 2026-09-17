@@ -5,35 +5,72 @@ import { getCurrentUserSafe } from "./authHelpers";
 
 const PARSER_PROMPT = `You are an order data extraction engine for an Albanian e-commerce order management system focused on Kosovo.
 The user uploads a screenshot of a chat conversation (Instagram DM, WhatsApp, Facebook Messenger) between a customer and a seller.
-Extract the customer's ORDER information from the conversation text and return ONLY a valid JSON object with exactly these keys:
+Extract the customer's ORDER information from the conversation and return a JSON object with EXACTLY these 8 keys and nothing else:
 
 {
-  "full_name": "String - customer full name ( Albanian names )",
-  "phone_number": "String - customer phone number, Kosovo format preferred: 044 123 456 or +383 44 123 456",
-  "city": "String - delivery city (Kosovo first: Prishtinë, Prizren, Ferizaj, Pejë, Gjakovë, Gjilan, Mitrovicë, Podujevë, Vushtrri; then Albania: Tiranë, Durrës, Vlorë, Shkodër, Elbasan; then Macedonia: Shkup, Tetovë, Manastir)",
-  "address": "String - full delivery address (Kosovo street format preferred, e.g. Rruga Agim Ramadani, Nr. 12)",
-  "product_notes": "String - product names, sizes, colors or other order notes",
-  "postal_fee_eur": "Number - shipping/postal fee in EUR — if you see a shipping fee stated in the chat, extract it in EUR; if it is stated only in Lek, convert 1 EUR = 100 Lek (e.g. 200 Lek -> 2.0)",
-  "total_amount_eur": "Number - total order amount in EUR. If the chat states the amount only in Lek, convert using 1 EUR = 100 Lek (e.g. 2500 Lek -> 25.00). If it is already in EUR, return that value. Never return Lek amounts as the EUR value."
+  "first_name": "string — the customer's real human FIRST name only (e.g. \"Mafir\"). Never include the surname, usernames, or brand names here.",
+  "last_name": "string — the customer's real human SURNAME/last name only (e.g. \"Beliu\"). Empty string if not stated.",
+  "phone": "string — the customer's phone number in clean digit-only format with optional leading 0 or +383 (e.g. \"044123245\" or \"+38344123245\"). No spaces or dashes.",
+  "city": "string — the delivery city, matched to a Kosovo municipality when possible (e.g. \"Fushë Kosovë\", \"Prishtinë\", \"Prizren\"). Kosovo comes first; then Albania (Tiranë, Durrës…) then North Macedonia (Shkup, Tetovë…).",
+  "address": "string — street name and building details ONLY (e.g. \"Rruga Bajram Beg\" or \"Rruga Agim Ramadani Nr. 12\"). Do NOT include the city here.",
+  "address_details": "string — floor, apartment number, entrance, or extra landmarks (e.g. \"Kati 3, Apartamenti 12\"). Empty string if not stated.",
+  "product_description": "string — the product name and details: item, size, color, quantity (e.g. \"Kamizolë e zezë, madhësia M\").",
+  "price": "number — the item price WITHOUT currency symbols (e.g. 25 or 25.50). If the amount is stated in Lek, convert using 1 EUR = 100 Lek (2500 Lek -> 25). If the chat shows a separate shipping fee, do NOT add it to this price; the shipping fee is not part of the item price."
 }
 
 Rules:
+- Extract REAL HUMAN NAMES only. Instagram handles, brand names, and seller names must NOT be treated as first_name/last_name.
 - Kosovo comes first. If the screenshot mentions both Kosovo and another country, prefer the Kosovo interpretation.
 - Prioritize Kosovo phone patterns: 044, 045, 049, 043, 048, 046, 047 and international +383.
-- Prioritize Kosovo municipalities: Prishtinë, Prizren, Ferizaj, Pejë, Gjakovë, Gjilan, Mitrovicë, Podujevë, Vushtrri, Obiliq, Suharekë, Drenas, Lipjan.
+- Prioritize Kosovo municipalities: Prishtinë, Prizren, Ferizaj, Pejë, Gjakovë, Gjilan, Mitrovicë, Podujevë, Vushtrri, Obiliq, Suharekë, Drenas, Lipjan, Fushë Kosovë, Kamenicë, Rahovec, Viti, Deçan, Klinë, Malisheva.
 - If a field is not present in the conversation, use an empty string for strings and 0 for numbers.
-- phone_number must keep digits only plus optional + prefix (e.g. "+38344123456" or "044123456"). No spaces in the raw extracted value; the frontend will format it for display.
-- total_amount_eur and postal_fee_eur must be plain numbers (e.g. 25.50), no currency symbols.
+- "price" must be a plain number, never a string, no currency symbols.
 - Return ONLY the JSON object, no markdown fences, no explanations.`;
 
+// Gemini structured-output schema — enforces the exact 8-field JSON contract.
+const RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    first_name: { type: "STRING" },
+    last_name: { type: "STRING" },
+    phone: { type: "STRING" },
+    city: { type: "STRING" },
+    address: { type: "STRING" },
+    address_details: { type: "STRING" },
+    product_description: { type: "STRING" },
+    price: { type: "NUMBER" },
+  },
+  required: [
+    "first_name",
+    "last_name",
+    "phone",
+    "city",
+    "address",
+    "address_details",
+    "product_description",
+    "price",
+  ],
+  propertyOrdering: [
+    "first_name",
+    "last_name",
+    "phone",
+    "city",
+    "address",
+    "address_details",
+    "product_description",
+    "price",
+  ],
+} as const;
+
 interface ParsedOrder {
-  full_name: string;
-  phone_number: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
   city: string;
   address: string;
-  product_notes: string;
-  postal_fee_eur: number;
-  total_amount_eur: number;
+  address_details: string;
+  product_description: string;
+  price: number;
 }
 
 function extractJson(text: string): ParsedOrder | null {
@@ -45,15 +82,16 @@ function extractJson(text: string): ParsedOrder | null {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
     if (start === -1 || end === -1) return null;
-    const obj = JSON.parse(cleaned.slice(start, end + 1));
+    const obj = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
     return {
-      full_name: String(obj.full_name ?? ""),
-      phone_number: String(obj.phone_number ?? ""),
-      city: String(obj.city ?? ""),
-      address: String(obj.address ?? ""),
-      product_notes: String(obj.product_notes ?? ""),
-      postal_fee_eur: Number(obj.postal_fee_eur ?? 0) || 0,
-      total_amount_eur: Number(obj.total_amount_eur ?? 0) || 0,
+      first_name: String(obj.first_name ?? "").trim(),
+      last_name: String(obj.last_name ?? "").trim(),
+      phone: String(obj.phone ?? "").replace(/[\s-]/g, "").trim(),
+      city: String(obj.city ?? "").trim(),
+      address: String(obj.address ?? "").trim(),
+      address_details: String(obj.address_details ?? "").trim(),
+      product_description: String(obj.product_description ?? "").trim(),
+      price: Number(obj.price ?? 0) || 0,
     };
   } catch {
     return null;
@@ -104,6 +142,7 @@ export const parseWithGemini = action({
           generationConfig: {
             temperature: 0.1,
             responseMimeType: "application/json",
+            responseSchema: RESPONSE_SCHEMA,
           },
         }),
       },
@@ -127,13 +166,14 @@ export const parseWithGemini = action({
     return {
       engine: "gemini" as const,
       parsed: {
-        full_name: parsed.full_name,
-        phone_number: parsed.phone_number,
+        first_name: parsed.first_name,
+        last_name: parsed.last_name,
+        phone: parsed.phone,
         city: parsed.city,
         address: parsed.address,
-        product_notes: parsed.product_notes,
-        total_amount: parsed.total_amount_eur,
-        postal_fee_eur: parsed.postal_fee_eur,
+        address_details: parsed.address_details,
+        product_description: parsed.product_description,
+        price: parsed.price,
       },
     };
   },

@@ -81,18 +81,18 @@ export default function NewOrder() {
           if (result.engine && result.parsed) {
             const p = result.parsed;
             setForm({
-              first_name: p.full_name?.split(" ")[0] ?? "",
-              last_name: p.full_name?.split(" ").slice(1).join(" ") ?? "",
-              phone: p.phone_number ?? "",
+              first_name: p.first_name ?? "",
+              last_name: p.last_name ?? "",
+              phone: p.phone ?? "",
               instagram: "",
               city: p.city ?? "",
               address: p.address ?? "",
-              addressDetails: "",
+              addressDetails: p.address_details ?? "",
               country: "Kosovë",
-              productDescription: p.product_notes ?? "",
-              productPrice: p.total_amount ?? 0,
+              productDescription: p.product_description ?? "",
+              productPrice: p.price ?? 0,
               postalFee: 0,
-              totalAmount: p.total_amount ?? 0,
+              totalAmount: p.price ?? 0,
               deliveryOpen: false,
               deliveryExchange: false,
             });
