@@ -1,0 +1,123 @@
+/* ── Bencho UI Magnifying Dock ────────────────────────────────────────────
+   The JS sets a per-item CSS variable `--d` (distance from the pointer,
+   in item units). CSS turns that into a smooth scale/translate wave —
+   no per-frame React state, GPU-friendly transforms only. */
+
+.gdock-container {
+  --gdock-base: 40px;      /* resting glyph box */
+  --_magnify: 1.32;        /* overridden inline by the magnify prop */
+  --_lift: 8;              /* overridden inline by the lift prop */
+  --_spread: 2;            /* overridden inline by the spread prop */
+  display: flex;
+  align-items: flex-end;   /* icons grow upward from the baseline */
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 -1px 0 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset,
+    0 8px 24px -12px rgb(0 0 0 / 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background 0.25s ease;
+}
+
+.gdock-item {
+  --d: 999;                /* distance from pointer, set per item by JS */
+  /* Magnification wave: item under pointer = magnify, neighbors decay
+     smoothly toward 1; the spread prop widens/narrows the falloff. */
+  --gdock-scale: clamp(
+    1,
+    calc(
+      var(--_magnify) -
+      (var(--d) - 1) * (var(--_magnify) - 1) / var(--_spread, 2)
+    ),
+    var(--_magnify)
+  );
+  --gdock-lift: calc((var(--gdock-scale) - 1) * var(--_lift) * 2.5);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: calc(var(--gdock-base) + 10px);
+  padding: 4px 2px 2px;
+  border-radius: 0.75rem;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  transform-origin: bottom center;
+  transform: translateY(calc(var(--gdock-lift) * -1)) scale(var(--gdock-scale));
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    color 0.15s ease;
+  will-change: transform;
+}
+
+.gdock-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gdock-base);
+  height: var(--gdock-base);
+  border-radius: 0.65rem;
+  color: currentColor;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.gdock-glyph svg {
+  width: 21px;
+  height: 21px;
+}
+
+.gdock-item:hover,
+.gdock-item:focus-visible {
+  color: var(--primary);
+  outline: none;
+}
+
+.gdock-item:hover .gdock-glyph,
+.gdock-item:focus-visible .gdock-glyph {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.gdock-item:active {
+  transform: translateY(calc(var(--gdock-lift) * -0.5)) scale(calc(var(--gdock-scale) * 0.96));
+}
+
+/* Active route: persistent highlight independent of hover */
+.gdock-item[data-active="true"] {
+  color: var(--primary);
+}
+.gdock-item[data-active="true"] .gdock-glyph {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+/* Label — hidden at rest, revealed as the item magnifies (fades + rises) */
+.gdock-label {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.gdock-item[data-hovered="true"] .gdock-label,
+.gdock-item:hover .gdock-label,
+.gdock-item:focus-visible .gdock-label {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Reduced motion: snap instead of spring */
+@media (prefers-reduced-motion: reduce) {
+  .gdock-item {
+    transition: none;
+  }
+}

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { MagnifyingDock } from "@/components/ui/MagnifyingDock";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
@@ -346,36 +347,9 @@ export function AppShell({
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
 
-        {/* Mobile bottom navigation */}
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur lg:hidden">
-          <div className="mx-auto flex max-w-md items-stretch justify-between px-2 py-1.5">
-            {NAV.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.to);
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition-colors",
-                    active
-                      ? "text-primary"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex size-8 items-center justify-center rounded-lg transition-colors",
-                      active && "bg-primary/10",
-                    )}
-                  >
-                    <Icon className="size-4" />
-                  </span>
-                  <span className="truncate">{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
+        {/* Mobile bottom navigation — Bencho magnifying dock */}
+        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-3 pt-1 lg:hidden">
+          <MagnifyingDock className="mx-auto w-full max-w-md" />
         </nav>
       </div>
     </div>
