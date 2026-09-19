@@ -45,6 +45,7 @@ import {
   PlugZap,
   Save,
   Sparkles,
+  Store,
   Truck,
   Users,
 } from "lucide-react";
@@ -58,14 +59,15 @@ export default function Settings() {
         <div className="flex flex-col gap-6">
           <header>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Cilësimet
+              Cilësimet e Dyqanit
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Konfiguroni integrimet API dhe menaxhoni stafin. E dukshme vetëm
-              për administratorët.
+              Të dhënat e dyqanit, tarifat postare, kredencialet e postës dhe
+              stafi — për kompaninë tuaj.
             </p>
           </header>
 
+          <StoreInfoSection />
           <GeminiSection />
           <ShippingRatesSection />
           <CourierSection />
@@ -73,6 +75,77 @@ export default function Settings() {
         </div>
       </RequireAdmin>
     </AppShell>
+  );
+}
+
+/** Të dhënat e Dyqanit — store profile persisted in app_settings. */
+const STORE_INFO_FIELDS = [
+  { key: "store_name", label: "Emri i dyqanit", placeholder: "p.sh. FlladituKS", type: "text" },
+  { key: "store_city", label: "Qyteti", placeholder: "p.sh. Prishtinë", type: "text" },
+  { key: "store_address", label: "Adresa", placeholder: "p.sh. Rr. Agim Ramadani, nn. 12", type: "text" },
+  { key: "store_phone", label: "Numri i telefonit", placeholder: "+383 ...", type: "tel" },
+] as const;
+
+function StoreInfoSection() {
+  const setSetting = useMutation(api.appSettings.setSetting);
+  const stored = useQuery(api.appSettings.getSetting, { key: "store_info" });
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (stored !== undefined && stored !== null) {
+      try {
+        setValues(JSON.parse(stored) as Record<string, string>);
+      } catch {
+        /* malformed JSON — start with empty form */
+      }
+    }
+  }, [stored]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await setSetting({ key: "store_info", value: JSON.stringify(values) });
+      toast.success("Të dhënat e dyqanit u ruajtën.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ruajtja dështoi.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="border-border/60">
+      <CardHeader>
+        <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Store className="size-5" />
+        </div>
+        <CardTitle className="text-base">Të dhënat e Dyqanit</CardTitle>
+        <CardDescription>
+          Përdoren në porosi dhe dokumente si informacioni i dërguesit.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {STORE_INFO_FIELDS.map((f) => (
+            <div key={f.key} className="space-y-1.5">
+              <Label htmlFor={f.key}>{f.label}</Label>
+              <Input
+                id={f.key}
+                type={f.type}
+                value={values[f.key] ?? ""}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                placeholder={f.placeholder}
+              />
+            </div>
+          ))}
+        </div>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
+          Ruaj të dhënat
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -425,7 +498,7 @@ function CourierSection() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={handleSave} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
-                Ruaj Lidhjen
+                Ruaj kredencialet
               </Button>
               <Button variant="outline" onClick={handleTest} disabled={testing || !username.trim() || !password}>
                 {testing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <PlugZap className="mr-2 size-4" />}

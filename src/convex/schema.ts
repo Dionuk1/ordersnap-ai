@@ -4,12 +4,14 @@ import { Infer, v } from "convex/values";
 
 export const ROLES = {
   ADMIN: "admin",
+  OWNER: "owner",
   USER: "user",
   MEMBER: "member",
 } as const;
 
 export const roleValidator = v.union(
   v.literal(ROLES.ADMIN),
+  v.literal(ROLES.OWNER),
   v.literal(ROLES.USER),
   v.literal(ROLES.MEMBER),
 );

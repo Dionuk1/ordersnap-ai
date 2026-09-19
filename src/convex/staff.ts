@@ -31,32 +31,43 @@ async function resolveTenant(
 export const listStaff = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    const admin = await isAdminUser(user);
-    if (!admin) throw new Error("Vetëm admini mund të shikojë stafin.");
+    // ZERO-THROW CONTRACT: any failure (unauthenticated session race,
+    // role check, uninitialized tenant) returns [] instead of a
+    // "[CONVEX Q(staff:listStaff)] Server Error" on the client.
+    try {
+      const user = await getCurrentUser(ctx);
+      if (!user) return [];
+      const admin = await isAdminUser(user);
+      if (!admin) return [];
 
-    const tenantId = await resolveTenant(ctx, user);
+      const tenantId = await resolveTenant(ctx, user);
 
-    const users = await ctx.db.query("users").collect();
-    return users
-      .filter((u) => {
-        if (u.isAnonymous) return false;
-        if (u._id === user._id) return false;
-        if (tenantId) return u.activeTenantId === tenantId;
-        // No tenant bound yet: fall back to email-listed membership.
-        return false;
-      })
-      .map((u) => ({
-        _id: u._id,
-        name: u.name ?? null,
-        email: u.email ?? null,
-        image: u.image ?? null,
-        // "Store Manager" | "Order Agent" (mapped from role)
-        role: u.role === "admin" ? ("store_manager" as const) : ("order_agent" as const),
-        hasTenant: u.activeTenantId != null,
-        _creationTime: u._creationTime,
-      }));
+      const users = await ctx.db.query("users").collect();
+      return users
+        .filter((u) => {
+          if (u.isAnonymous) return false;
+          if (u._id === user._id) return false;
+          if (tenantId) return u.activeTenantId === tenantId;
+          // No tenant bound yet: fall back to email-listed membership.
+          return false;
+        })
+        .map((u) => ({
+          _id: u._id,
+          name: u.name ?? null,
+          email: u.email ?? null,
+          image: u.image ?? null,
+          // "Store Manager" | "Order Agent" (mapped from role)
+          role:
+            u.role === "admin" || u.role === "owner"
+              ? ("store_manager" as const)
+              : ("order_agent" as const),
+          hasTenant: u.activeTenantId != null,
+          _creationTime: u._creationTime,
+        }));
+    } catch (err) {
+      console.error("staff:listStaff failed, returning empty list:", err);
+      return [];
+    }
   },
 });
 
@@ -93,7 +104,7 @@ export const createStaffMember = action({
   },
   handler: async (ctx, { name: rawName, email: rawEmail, password, role }) => {
     const user = await ctx.runQuery(api.users.currentUser, {});
-    if (!user || user.role !== "admin") {
+    if (!user || (user.role !== "admin" && user.role !== "owner")) {
       throw new Error("Vetëm admini i kompanisë mund të shtojë staf.");
     }
 
@@ -146,7 +157,7 @@ export const removeStaffAccess = action({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const user = await ctx.runQuery(api.users.currentUser, {});
-    if (!user || user.role !== "admin") {
+    if (!user || (user.role !== "admin" && user.role !== "owner")) {
       throw new Error("Vetëm admini i kompanisë mund të heqë qasje.");
     }
     const target = await ctx.runQuery(api.users.currentUserById, { userId });

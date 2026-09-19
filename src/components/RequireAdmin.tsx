@@ -8,7 +8,8 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 
   if (isLoading) return null;
 
-  const isAdmin = user?.role === "admin";
+  // Store owners and store admins both manage company settings & staff.
+  const isAdmin = user?.role === "admin" || user?.role === "owner";
   if (!isAdmin) {
     return (
       <Card className="mx-auto mt-8 max-w-md border-dashed">

@@ -59,7 +59,10 @@ const EMPTY_FORM = {
 
 export default function Staff() {
   const { user } = useAuth();
-  const staff = useQuery(api.staff.listStaff, {});
+  const rawStaff = useQuery(api.staff.listStaff, {});
+  // Defensive fallback: an undefined/erroring subscription must never crash
+  // the component tree — render the empty state instead.
+  const staff = rawStaff ?? [];
   const createStaff = useAction(api.staff.createStaffMember);
   const removeAccess = useAction(api.staff.removeStaffAccess);
 
@@ -135,7 +138,7 @@ export default function Staff() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {staff === undefined ? (
+                {rawStaff === undefined ? (
                   <div className="space-y-2">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <Skeleton key={i} className="h-12 w-full" />

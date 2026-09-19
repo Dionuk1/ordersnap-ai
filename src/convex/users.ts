@@ -34,9 +34,10 @@ export const getCurrentUser = async (ctx: QueryCtx) => {
   return await ctx.db.get(userId);
 };
 
-/** Shorthand: is the current user an admin? (null user => false) */
+/** Shorthand: is the current user a store admin/owner? (null user => false)
+ *  Store-level settings, staff, and courier config accept BOTH roles. */
 export async function isAdminUser(user: Doc<"users"> | null): Promise<boolean> {
-  return user?.role === "admin";
+  return user?.role === "admin" || user?.role === "owner";
 }
 
 /** Fetch a user by id (auth required) — used by staff management. */
