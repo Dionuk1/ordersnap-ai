@@ -46,8 +46,8 @@ import { toast } from "sonner";
 type StaffRole = "store_manager" | "order_agent";
 
 const ROLE_LABELS: Record<StaffRole, string> = {
-  store_manager: "Store Manager",
-  order_agent: "Order Agent",
+  store_manager: "Menaxher",
+  order_agent: "Agjent Porosish",
 };
 
 const EMPTY_FORM = {
@@ -117,7 +117,7 @@ export default function Staff() {
               <div>
                 <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
                   <Users className="size-6 text-primary" />
-                  Stafi
+                  Stafi i Dyqanit
                 </h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Menaxho anëtarët e kompanisë tënde dhe qasjen e tyre.
@@ -148,7 +148,7 @@ export default function Staff() {
                   <div className="flex flex-col items-center gap-2 py-8 text-center">
                     <Users className="size-8 text-muted-foreground/40" />
                     <p className="text-sm text-muted-foreground">
-                      Nuk ka anëtarë stafi. Shtoni të parin me butonin më sipër.
+                      Nuk ka anëtarë stafi të regjistruar.
                     </p>
                   </div>
                 ) : (
@@ -282,8 +282,8 @@ export default function Staff() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="store_manager">Store Manager</SelectItem>
-                    <SelectItem value="order_agent">Order Agent</SelectItem>
+                    <SelectItem value="store_manager">Menaxher</SelectItem>
+                    <SelectItem value="order_agent">Agjent Porosish</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

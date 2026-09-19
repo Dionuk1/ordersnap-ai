@@ -193,9 +193,8 @@ function GeminiSection() {
         </div>
         <CardTitle className="text-base">Gemini API Key</CardTitle>
         <CardDescription>
-          Çelësi ruhet i sigurt në databazë dhe përdoret nga AI Parser
-          (gemini-2.5-flash). Pa çelës, sistemi përdor automatikisht motorin
-          lokal.
+          Përdoret për parsing automatik të porosive me AI. Çelësi ruhet i
+          sigurt në databazë dhe përdoret nga AI Parser (gemini-2.5-flash).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -423,7 +422,7 @@ function CourierSection() {
           <Bot className="size-5" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-base">Konfigurimi i Postës (Posta Cheetah)</CardTitle>
+          <CardTitle className="text-base">Kredencialet e Postës Cheetah</CardTitle>
           {config !== undefined && (
             <Badge variant={config.hasCredentials ? "default" : "secondary"}>
               {config.hasCredentials ? "Konfiguruar" : "Nuk është konfiguruar"}
