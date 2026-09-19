@@ -1,20 +1,18 @@
 /* ── Liquid Fluid Spring Toggle ───────────────────────────────────────────
    The goo layer applies filter: url(#liq-goo) (defined inline in the
-   component) — Gaussian blur + contrast matrix melts the thumb and its
-   chasing drop into one liquid blob as they move.
+   component) — Gaussian blur + contrast matrix melts the trailing drop
+   into a liquid blob as it chases the thumb.
 
-   CONTAINMENT CONTRACT: the SVG blur expands the filter region beyond the
-   element bounds, so the goo layer insets by -4px inside the track and the
-   track itself clips with overflow: hidden — the blob can never bleed past
-   the pill. The wrapper's 4px padding gives the track's own shadow/glow
-   breathing room in headers without any visual clipping. */
+   SHAPE CONTRACT: the main thumb renders OUTSIDE the goo layer (see TSX)
+   so the SVG filter can never squash it into an oval — it is always a
+   perfect 28×28 circle. Only the drop is filtered. The track clips with
+   overflow: hidden and the thumb rests 4px inside each edge, so nothing
+   touches the borders. */
 
 .liq-toggle-wrapper {
   position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 4px; /* Gives the SVG blur space to render without clipping */
   cursor: pointer;
   user-select: none;
   border-radius: 9999px;
@@ -34,14 +32,15 @@
 
 .liq-track {
   position: relative;
-  width: 68px; /* Slightly compact width to fit inside headers */
-  height: 32px;
-  background: #0f172a;
-  border: 1px solid rgb(255 255 255 / 0.12);
+  width: 72px;
+  height: 36px;
+  background: var(--ink, #0f172a);
+  border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 9999px;
-  overflow: hidden; /* CRITICAL: Clips any overflowing liquid blob inside the pill */
   display: flex;
   align-items: center;
+  user-select: none;
+  overflow: hidden; /* Ensures full inner containment */
   transition: background 0.25s ease, border-color 0.25s ease;
 }
 
@@ -51,29 +50,38 @@
   border-color: rgb(15 23 42 / 0.08);
 }
 
+/* Adjust SVG Goo intensity so it doesn't deform the circle into an oval —
+   only the drop lives in this layer; the thumb is unfiltered. */
 .liq-goo-layer {
   position: absolute;
-  inset: -4px; /* Extends goo bounds inside the clipped track */
+  inset: 0;
   filter: url("#liq-goo");
   pointer-events: none;
 }
 
+/* Perfect 28x28 Circle Thumb */
 .liq-thumb {
   position: absolute;
-  top: 4px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  top: 3px;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% !important; /* Force clean circular shape */
   background: #3b82f6;
+  aspect-ratio: 1 / 1;
+  z-index: 2; /* Paints above the goo drop where they overlap */
 }
 
+/* Trailing Drop */
 .liq-drop {
   position: absolute;
-  top: 5px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  top: 4px;
+  left: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50% !important;
   background: #60a5fa;
+  aspect-ratio: 1 / 1;
 }
 
 .liq-icons {
@@ -83,6 +91,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 6px;
+  padding: 0 8px;
   pointer-events: none;
 }

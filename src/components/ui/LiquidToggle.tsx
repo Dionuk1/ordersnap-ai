@@ -42,8 +42,9 @@ export function LiquidToggle({
 
   const isDark = mounted && resolvedTheme === "dark";
 
-  // Track geometry: 68px wide, 24px thumb, 4px inset → travel 36px
-  // (68 − 2 border − 24 thumb − 2×4 padding = 36).
+  // Track geometry: 72px wide, 28px thumb, 4px inset → travel 36px
+  // (72 − 2 border − 28 thumb − 4 inset = 36). Equal insets keep the
+  // thumb a full 4px clear of both edges — no border clipping.
   const THUMB_ON = 36;
   const THUMB_OFF = 4;
 
@@ -113,12 +114,13 @@ export function LiquidToggle({
 
       {/* Track Container */}
       <div className="liq-track" data-dark={isDark}>
+        {/* Liquid Chasing Drop — inside the goo filter, melts/stretches. */}
         <div className="liq-goo-layer">
-          {/* Main Thumb */}
-          <motion.div className="liq-thumb" style={{ x }} />
-          {/* Liquid Chasing Drop */}
           <motion.div className="liq-drop" style={{ x: dropX }} />
         </div>
+        {/* Main Thumb — OUTSIDE the goo layer so the SVG filter can never
+            deform it: always a perfect 28×28 circle. */}
+        <motion.div className="liq-thumb" style={{ x }} />
 
         {/* Icons Overlay */}
         <div className="liq-icons">
