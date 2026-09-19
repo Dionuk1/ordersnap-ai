@@ -36,6 +36,7 @@ import {
   shippingRateKey,
 } from "@/lib/order-types";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Bot,
   Eye,
@@ -53,6 +54,15 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function Settings() {
+  const { user } = useAuth();
+  // Debug breadcrumb for blank-screen diagnosis.
+  console.log(
+    "[Settings Debug] User Role:",
+    user?.role ?? "(unknown)",
+    "| Store:",
+    user?.activeTenantId ?? "(none)",
+  );
+
   return (
     <AppShell>
       <RequireAdmin>

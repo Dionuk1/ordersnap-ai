@@ -59,6 +59,13 @@ const EMPTY_FORM = {
 
 export default function Staff() {
   const { user } = useAuth();
+  // Debug breadcrumb for blank-screen diagnosis.
+  console.log(
+    "[Staff Debug] User Role:",
+    user?.role ?? "(unknown)",
+    "| Store:",
+    user?.activeTenantId ?? "(none)",
+  );
   const rawStaff = useQuery(api.staff.listStaff, {});
   // Defensive fallback: an undefined/erroring subscription must never crash
   // the component tree — render the empty state instead.
@@ -138,32 +145,44 @@ export default function Staff() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {rawStaff === undefined ? (
-                  <div className="space-y-2">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                ) : staff.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 py-8 text-center">
-                    <Users className="size-8 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground">
-                      Nuk ka anëtarë stafi të regjistruar.
-                    </p>
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Emri</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Roli</TableHead>
-                        <TableHead>Data e Shtimit</TableHead>
-                        <TableHead className="text-right">Veprime</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {staff.map((m) => (
+                {/* Table headers are ALWAYS rendered — never a silent empty screen. */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Emri</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Roli</TableHead>
+                      <TableHead>Data e Shtimit</TableHead>
+                      <TableHead className="text-right">Veprime</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rawStaff === undefined
+                      ? Array.from({ length: 3 }).map((_, i) => (
+                          <TableRow key={`sk-${i}`}>
+                            {Array.from({ length: 5 }).map((_, j) => (
+                              <TableCell key={j}>
+                                <Skeleton className="h-5 w-full" />
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      : staff.length === 0
+                        ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="h-32 text-center">
+                              <div className="flex flex-col items-center gap-2">
+                                <Users className="size-8 text-muted-foreground/40" />
+                                <p className="text-sm text-muted-foreground">
+                                  Nuk ka anëtarë stafi të regjistruar. Kliko
+                                  "+ Shto Anëtar Stafi" për të shtuar anëtarin
+                                  e parë.
+                                </p>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                        : staff.map((m) => (
                         <TableRow key={m._id}>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -220,8 +239,7 @@ export default function Staff() {
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
-                )}
+                </Table>
               </CardContent>
             </Card>
           </div>
