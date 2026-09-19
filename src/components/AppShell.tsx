@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { MagnifyingDock } from "@/components/ui/MagnifyingDock";
+import { LiquidToggle } from "@/components/ui/LiquidToggle";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
@@ -134,7 +135,7 @@ export function AppShell({
             {superadmin ? "Super Admin" : "Administrator i Kompanisë"}
           </span>
         </div>
-        <ThemeToggle />
+        <LiquidToggle speed={87} stretch={36} />
       </div>
       <Button
         variant="ghost"
@@ -226,7 +227,7 @@ export function AppShell({
             <ShieldCheck className="size-4 text-primary" />
             <span className="text-sm font-semibold">OrderSnap AI — Portal</span>
             <div className="ml-auto lg:hidden">
-              <ThemeToggle />
+              <LiquidToggle speed={87} stretch={36} />
             </div>
           </header>
           <main className="flex-1 p-4 sm:p-6 lg:p-8">
@@ -339,7 +340,7 @@ export function AppShell({
           <img src={logo} alt="OrderSnap AI" className="size-7 rounded-md" />
           <span className="text-sm font-semibold">OrderSnap AI</span>
           <div className="ml-auto">
-            <ThemeToggle />
+            <LiquidToggle speed={87} stretch={36} />
           </div>
         </header>
 

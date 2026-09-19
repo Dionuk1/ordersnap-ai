@@ -1,0 +1,78 @@
+/* ── Liquid Fluid Spring Toggle ───────────────────────────────────────────
+   The goo layer applies filter: url(#liq-goo) (defined inline in the
+   component) — Gaussian blur + contrast matrix melts the thumb and its
+   chasing drop into one liquid blob as they move. */
+
+.liq-toggle-wrapper {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  display: inline-block;
+  border-radius: 9999px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.liq-toggle-wrapper:focus-visible {
+  outline: 2px solid var(--ring, #3b82f6);
+  outline-offset: 3px;
+}
+
+.liq-svg-filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.liq-track {
+  position: relative;
+  width: 76px;
+  height: 36px;
+  background: #0f172a;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 9999px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+/* Light mode: pale track so the blue blob stays visible */
+.liq-track[data-dark="false"] {
+  background: #e2e8f0;
+  border-color: rgb(15 23 42 / 0.08);
+}
+
+.liq-goo-layer {
+  position: absolute;
+  inset: 0;
+  filter: url("#liq-goo");
+  pointer-events: none;
+}
+
+.liq-thumb {
+  position: absolute;
+  top: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
+.liq-drop {
+  position: absolute;
+  top: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #60a5fa;
+}
+
+.liq-icons {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+}
