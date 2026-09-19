@@ -62,63 +62,73 @@ export const seedSuperAdmin = mutation({
 export const listCompanies = query({
   args: {},
   handler: async (ctx) => {
-    await requireSuperAdmin(ctx);
-    const tenants = await ctx.db.query("tenants").collect();
-    const users = await ctx.db.query("users").collect();
-    const orders = await ctx.db.query("orders").collect();
+    // ZERO-THROW CONTRACT: the Super Admin page subscribes to this reactively.
+    // Any failure — unauthenticated session race, non-super-admin viewer,
+    // missing table — must return [] instead of a Server Error that would
+    // crash the React render tree. Security is preserved: unauthorized
+    // callers receive an EMPTY list, never company data.
+    try {
+      await requireSuperAdmin(ctx);
+      const tenants = await ctx.db.query("tenants").collect();
+      const users = await ctx.db.query("users").collect();
+      const orders = await ctx.db.query("orders").collect();
 
-    const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
-    // Global tenant attribution: map every user → its tenant so AI usage
-    // counts ALL company admins, not just the primary owner.
-    const tenantIdByEmail = new Map(
-      tenants
-        .filter((t: any) => t.ownerEmail)
-        .map((t: any) => [(t.ownerEmail as string).toLowerCase(), t._id]),
-    );
-    const userTenant = new Map<string, string>();
-    for (const u of users as any[]) {
-      if (u.isAnonymous) continue;
-      const tid =
-        u.activeTenantId ??
-        (u.email ? tenantIdByEmail.get(u.email.toLowerCase()) : undefined);
-      if (tid) userTenant.set(String(u._id), String(tid));
+      // Global tenant attribution: map every user → its tenant so AI usage
+      // counts ALL company admins, not just the primary owner.
+      const tenantIdByEmail = new Map(
+        tenants
+          .filter((t: any) => t.ownerEmail)
+          .map((t: any) => [(t.ownerEmail as string).toLowerCase(), t._id]),
+      );
+      const userTenant = new Map<string, string>();
+      for (const u of users as any[]) {
+        if (u.isAnonymous) continue;
+        const tid =
+          u.activeTenantId ??
+          (u.email ? tenantIdByEmail.get(u.email.toLowerCase()) : undefined);
+        if (tid) userTenant.set(String(u._id), String(tid));
+      }
+
+      // Pre-group AI-parsed orders by tenant id (one pass over ALL orders).
+      const aiParsedByTenant = new Map<string, number>();
+      for (const o of orders as any[]) {
+        if (o.deletedAt) continue;
+        if (o.source !== "gemini" && o.source !== "local") continue;
+        if (o._creationTime <= monthAgo) continue;
+        const tid = o.createdBy ? userTenant.get(String(o.createdBy)) : undefined;
+        if (tid) aiParsedByTenant.set(tid, (aiParsedByTenant.get(tid) ?? 0) + 1);
+      }
+
+      return tenants
+        .sort((a: any, b: any) => b._creationTime - a._creationTime)
+        .map((t: any) => {
+          const owner = users.find(
+            (u: any) =>
+              u.email && u.email.toLowerCase() === (t.ownerEmail ?? "").toLowerCase(),
+          );
+          const aiParsed30d = aiParsedByTenant.get(String(t._id)) ?? 0;
+
+          return {
+            _id: t._id as string,
+            name: t.name as string,
+            slug: t.slug as string,
+            ownerEmail: (t.ownerEmail ?? owner?.email ?? null) as string | null,
+            status: (t.status ?? (t.isActive === false ? "suspended" : "active")) as
+              | "active"
+              | "suspended",
+            ownerId: (owner?._id ?? null) as string | null,
+            tier: (t.tier ?? null) as string | null,
+            monthlyAiQuota: (t.monthlyAiQuota ?? null) as number | null,
+            aiParsed30d,
+            createdAt: t._creationTime as number,
+          };
+        });
+    } catch (err) {
+      console.error("Suppressed superAdmin:listCompanies error:", err);
+      return [];
     }
-
-    // Pre-group AI-parsed orders by tenant id (one pass over ALL orders).
-    const aiParsedByTenant = new Map<string, number>();
-    for (const o of orders as any[]) {
-      if (o.deletedAt) continue;
-      if (o.source !== "gemini" && o.source !== "local") continue;
-      if (o._creationTime <= monthAgo) continue;
-      const tid = o.createdBy ? userTenant.get(String(o.createdBy)) : undefined;
-      if (tid) aiParsedByTenant.set(tid, (aiParsedByTenant.get(tid) ?? 0) + 1);
-    }
-
-    return tenants
-      .sort((a: any, b: any) => b._creationTime - a._creationTime)
-      .map((t: any) => {
-        const owner = users.find(
-          (u: any) =>
-            u.email && u.email.toLowerCase() === (t.ownerEmail ?? "").toLowerCase(),
-        );
-        const aiParsed30d = aiParsedByTenant.get(String(t._id)) ?? 0;
-
-        return {
-          _id: t._id as string,
-          name: t.name as string,
-          slug: t.slug as string,
-          ownerEmail: (t.ownerEmail ?? owner?.email ?? null) as string | null,
-          status: (t.status ?? (t.isActive === false ? "suspended" : "active")) as
-            | "active"
-            | "suspended",
-          ownerId: (owner?._id ?? null) as string | null,
-          tier: (t.tier ?? null) as string | null,
-          monthlyAiQuota: (t.monthlyAiQuota ?? null) as number | null,
-          aiParsed30d,
-          createdAt: t._creationTime as number,
-        };
-      });
   },
 });
 
