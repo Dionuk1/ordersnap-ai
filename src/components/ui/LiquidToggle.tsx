@@ -42,8 +42,9 @@ export function LiquidToggle({
 
   const isDark = mounted && resolvedTheme === "dark";
 
-  // Track geometry: 76px wide, 28px thumb, 2px padding → travel 44px.
-  const THUMB_ON = 44;
+  // Track geometry: 68px wide, 24px thumb, 4px inset → travel 36px
+  // (68 − 2 border − 24 thumb − 2×4 padding = 36).
+  const THUMB_ON = 36;
   const THUMB_OFF = 4;
 
   // Motion physics

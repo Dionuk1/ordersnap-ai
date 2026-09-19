@@ -1,13 +1,22 @@
 /* ── Liquid Fluid Spring Toggle ───────────────────────────────────────────
    The goo layer applies filter: url(#liq-goo) (defined inline in the
    component) — Gaussian blur + contrast matrix melts the thumb and its
-   chasing drop into one liquid blob as they move. */
+   chasing drop into one liquid blob as they move.
+
+   CONTAINMENT CONTRACT: the SVG blur expands the filter region beyond the
+   element bounds, so the goo layer insets by -4px inside the track and the
+   track itself clips with overflow: hidden — the blob can never bleed past
+   the pill. The wrapper's 4px padding gives the track's own shadow/glow
+   breathing room in headers without any visual clipping. */
 
 .liq-toggle-wrapper {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px; /* Gives the SVG blur space to render without clipping */
   cursor: pointer;
   user-select: none;
-  display: inline-block;
   border-radius: 9999px;
   -webkit-tap-highlight-color: transparent;
 }
@@ -25,12 +34,12 @@
 
 .liq-track {
   position: relative;
-  width: 76px;
-  height: 36px;
+  width: 68px; /* Slightly compact width to fit inside headers */
+  height: 32px;
   background: #0f172a;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid rgb(255 255 255 / 0.12);
   border-radius: 9999px;
-  padding: 2px;
+  overflow: hidden; /* CRITICAL: Clips any overflowing liquid blob inside the pill */
   display: flex;
   align-items: center;
   transition: background 0.25s ease, border-color 0.25s ease;
@@ -44,7 +53,7 @@
 
 .liq-goo-layer {
   position: absolute;
-  inset: 0;
+  inset: -4px; /* Extends goo bounds inside the clipped track */
   filter: url("#liq-goo");
   pointer-events: none;
 }
@@ -52,17 +61,17 @@
 .liq-thumb {
   position: absolute;
   top: 4px;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #3b82f6;
 }
 
 .liq-drop {
   position: absolute;
-  top: 6px;
-  width: 24px;
-  height: 24px;
+  top: 5px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #60a5fa;
 }
@@ -74,5 +83,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
+  pointer-events: none;
 }
