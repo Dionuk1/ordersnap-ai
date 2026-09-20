@@ -71,7 +71,9 @@ export default function Landing() {
     >
       {/* Nav */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+        {/* 3-part grid: brand | centered CTA | actions */}
+        <div className="mx-auto grid h-16 max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 sm:px-6">
+          {/* Left: Brand / Logo */}
           <div className="flex items-center gap-2.5">
             <img src={logo} alt="OrderSnap AI" className="size-9 rounded-lg" />
             <div className="leading-tight">
@@ -83,13 +85,22 @@ export default function Landing() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <LiquidToggle speed={87} stretch={36} />
-            <Button asChild>
+
+          {/* Center: Main CTA — dead-center, redirects to /login */}
+          <div className="flex justify-center">
+            <Button asChild className="shadow-sm transition-all">
               <Link to="/login">
                 Fillo tani
                 <ArrowRight className="ml-1 size-4" />
               </Link>
+            </Button>
+          </div>
+
+          {/* Right: Theme Toggle + Regjistrohu */}
+          <div className="flex items-center justify-end gap-3">
+            <LiquidToggle speed={87} stretch={36} />
+            <Button variant="outline" asChild className="transition-all">
+              <Link to="/register">Regjistrohu</Link>
             </Button>
           </div>
         </div>
