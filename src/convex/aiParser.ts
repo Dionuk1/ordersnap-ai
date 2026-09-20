@@ -108,6 +108,8 @@ interface ParsedOrder {
   quantity: number;
   notes: string;
   price: number;
+  /** Inferred shipping country (Kosovë/Shqipëri/Maqedoni) or null. */
+  country: string | null;
 }
 
 /** Official Kosovo municipalities (the canonical output forms). */
@@ -208,6 +210,89 @@ function scrubStreetKeywords(name: string): string {
 }
 
 /**
+ * Split a full human name into first + last.
+ *
+ * LLMs occasionally dump the whole name into ONE field ("Arben Krasniqi"
+ * in last_name with a junk fragment like "EN" in first_name) or the entire
+ * name into first_name with an empty last_name. This normalizes both cases:
+ *   ("EN", "Arben Krasniqi")    → ("Arben", "Krasniqi")
+ *   ("Arben Krasniqi", "")      → ("Arben", "Krasniqi")
+ *   ("Arben", "")               → ("Arben", "")
+ */
+function splitFullName(rawFirst: string, rawLast: string): {
+  first_name: string;
+  last_name: string;
+} {
+  const f = rawFirst.trim();
+  const l = rawLast.trim();
+  const fWords = f.split(/\s+/).filter(Boolean);
+  const lWords = l.split(/\s+/).filter(Boolean);
+
+  // last_name holds ≥2 words → it is likely the FULL name. Its first word
+  // wins as the given name; the rest is the surname.
+  if (lWords.length >= 2) {
+    return {
+      first_name: lWords[0],
+      last_name: lWords.slice(1).join(" "),
+    };
+  }
+
+  // first_name holds multiple words and last is empty → split it.
+  if (fWords.length >= 2 && lWords.length === 0) {
+    return {
+      first_name: fWords[0],
+      last_name: fWords.slice(1).join(" "),
+    };
+  }
+
+  return { first_name: f, last_name: l };
+}
+
+/** Diacritic-insensitive fold used for city → country inference. */
+function foldCity(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z]/g, "");
+}
+
+const AL_COUNTRY_CITIES = [
+  "tirane", "tirona", "durres", "durels", "vlore", "shkoder", "elbasan",
+  "fier", "korçe", "korce", "berat", "lushnje", "kavaje", "sarande",
+] as const;
+const MK_COUNTRY_CITIES = [
+  "shkup", "skopje", "tetove", "tetovo", "manastir", "bitola", "oher",
+  "ohrid", "kumanove", "gostivar",
+] as const;
+const XK_COUNTRY_CITIES = [
+  "prishtine", "pristina", "prizren", "ferizaj", "ujeqe", "peje", "peja",
+  "gjakove", "gjakova", "gjilan", "mitrovice", "podujeve", "vushtrri",
+  "fushekosove", "suhareke", "drenas", "lipjan", "kline", "malisheve",
+  "decan", "kacanik", "gjilan",
+] as const;
+
+/**
+ * Infer the shipping country from phone prefix and/or city.
+ * Kosovo first; Albania (+355 / 068/069 / Tiranë…), then North Macedonia.
+ * Returns null when the evidence is inconclusive (caller keeps its current
+ * country instead of guessing).
+ */
+function inferCountry(phone: string, city: string): string | null {
+  const p = phone.replace(/[^\d+]/g, "");
+  if (p.startsWith("+383") || p.startsWith("383")) return "Kosovë";
+  if (p.startsWith("+355") || p.startsWith("355") || /^0?6[89]/.test(p)) return "Shqipëri";
+  if (p.startsWith("+389") || p.startsWith("389")) return "Maqedoni";
+
+  const c = foldCity(city);
+  if (!c) return null;
+  if (XK_COUNTRY_CITIES.some((x) => c.includes(x))) return "Kosovë";
+  if (AL_COUNTRY_CITIES.some((x) => c.includes(x))) return "Shqipëri";
+  if (MK_COUNTRY_CITIES.some((x) => c.includes(x))) return "Maqedoni";
+  return null;
+}
+
+/**
  * Normalize a phone to a clean dialable form.
  * Kosovo (+383/0…) → local 04…; Albania (+355) and North Macedonia (+389)
  * keep their international form so nothing is silently mangled.
@@ -225,17 +310,24 @@ function normalizePhone(raw: string): string {
 
 /** Apply all post-processing normalizers to a raw parsed object. */
 function sanitizeParsedOrder(obj: Record<string, unknown>): ParsedOrder {
+  const names = splitFullName(
+    scrubStreetKeywords(String(obj.first_name ?? "").trim()),
+    scrubStreetKeywords(String(obj.last_name ?? "").trim()),
+  );
+  const phone = normalizePhone(String(obj.phone ?? "").replace(/[\s-]/g, "").trim());
+  const city = normalizeCity(String(obj.city ?? "").trim());
   return {
-    first_name: scrubStreetKeywords(String(obj.first_name ?? "").trim()),
-    last_name: scrubStreetKeywords(String(obj.last_name ?? "").trim()),
-    phone: normalizePhone(String(obj.phone ?? "").replace(/[\s-]/g, "").trim()),
-    city: normalizeCity(String(obj.city ?? "").trim()),
+    first_name: names.first_name,
+    last_name: names.last_name,
+    phone,
+    city,
     address: String(obj.address ?? "").trim(),
     address_details: String(obj.address_details ?? "").trim(),
     product_description: String(obj.product_description ?? "").trim(),
     quantity: Math.max(1, Number(obj.quantity ?? 1) || 1),
     notes: String(obj.notes ?? "").trim(),
     price: Number(obj.price ?? 0) || 0,
+    country: inferCountry(phone, city),
   };
 }
 
@@ -339,6 +431,7 @@ export const parseWithGemini = action({
         quantity: parsed.quantity,
         notes: parsed.notes,
         price: parsed.price,
+        country: parsed.country,
       },
     };
   },

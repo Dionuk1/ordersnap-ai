@@ -138,20 +138,34 @@ function NewOrderInner() {
             // Every parser field is applied with a safe default so a partial
             // AI response can never produce undefined in the form state.
             const p = result.parsed;
-            setForm((f) => ({
-              ...f,
-              first_name: p.first_name || "",
-              last_name: p.last_name || "",
-              phone: p.phone || "",
-              city: p.city || "",
-              address: p.address || "",
-              addressDetails: p.address_details || "",
-              productDescription: p.product_description || "",
-              quantity: p.quantity ?? 1,
-              notes: p.notes || "",
-              productPrice: p.price ?? 0,
-              totalAmount: (p.price ?? 0) + (f.postalFee || 0),
-            }));
+            setForm((f) => {
+              // Country inference: server-side (phone prefix / city) wins;
+              // falls back to the form's current country.
+              const country = p.country ?? f.country;
+              // When the extraction changes the country, re-default the
+              // postal fee to the new country's configured rate (the old
+              // fee belonged to the previous country).
+              const feeChanged = country !== f.country;
+              const newFee = feeChanged
+                ? (publicSettings.shippingRates?.[shippingRateField(country)] ?? (f.postalFee || 0))
+                : f.postalFee || 0;
+              return {
+                ...f,
+                first_name: p.first_name || "",
+                last_name: p.last_name || "",
+                phone: p.phone || "",
+                city: p.city || "",
+                address: p.address || "",
+                addressDetails: p.address_details || "",
+                productDescription: p.product_description || "",
+                quantity: p.quantity ?? 1,
+                notes: p.notes || "",
+                country,
+                postalFee: newFee,
+                productPrice: p.price ?? 0,
+                totalAmount: (p.price ?? 0) + newFee,
+              };
+            });
             setEngine("gemini");
             usedEngine = "gemini";
           }
