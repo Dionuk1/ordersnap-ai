@@ -4,7 +4,7 @@ import { createAccount, invalidateSessions } from "@convex-dev/auth/server";
 import { getCurrentUser, isAdminUser } from "./users";
 import { api } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx, ActionCtx } from "./_generated/server";
+import type { QueryCtx, ActionCtx, MutationCtx } from "./_generated/server";
 
 /**
  * Staff management — company-scoped. Staff records are `users` bound to the
@@ -66,6 +66,7 @@ export const listStaff = query({
               ? ("store_manager" as const)
               : ("order_agent" as const),
           hasTenant: u.activeTenantId != null,
+          isActive: u.isActive !== false,
           _creationTime: u._creationTime,
         }));
     } catch (err) {
@@ -214,6 +215,193 @@ export const setRole = mutation({
       throw new Error("Anëtari nuk i përket kompanisë tuaj.");
     }
     await ctx.db.patch(userId, { role });
+  },
+});
+
+// ── Credential & Access Management ("Rivendos" / "Heq Qasje" / "Fshi") ──
+
+/**
+ * Internal: patch the user's profile email AND keep Convex Auth's password
+ * account consistent. The password account is keyed by email — changing one
+ * without the other breaks sign-in — so both move together.
+ */
+async function renameAuthAccount(
+  ctx: MutationCtx,
+  oldEmail: string,
+  newEmail: string,
+) {
+  const account = await ctx.db
+    .query("authAccounts")
+    .withIndex("providerAndAccountId", (q: any) =>
+      q.eq("provider", "password").eq("providerAccountId", oldEmail),
+    )
+    .unique();
+  if (!account) return;
+  await ctx.db.patch(account._id, { providerAccountId: newEmail });
+}
+
+/**
+ * "Rivendos" — update a staff member's email and/or set a new password.
+ *
+ * SECURITY: Convex Auth hashes secrets with scrypt inside the Password
+ * provider. Direct `passwordHash` patching is impossible from a mutation, so
+ * the new password is set by an internal action that calls the auth
+ * component's `modifyAccount` store mutation (proper hashing).
+ */
+export const resetStaffCredentials = action({
+  args: {
+    staffId: v.id("users"),
+    newEmail: v.optional(v.string()),
+    newPassword: v.optional(v.string()),
+  },
+  handler: async (ctx, { staffId, newEmail: rawEmail, newPassword }) => {
+    const user = await ctx.runQuery(api.users.currentUser, {});
+    if (!user || (user.role !== "admin" && user.role !== "owner")) {
+      throw new Error("Vetëm admini i kompanisë mund të rivendosë kredencialet.");
+    }
+    const staffUser = await ctx.runQuery(api.users.currentUserById, { userId: staffId });
+    if (!staffUser) throw new Error("Anëtari i stafit nuk u gjet");
+
+    // Tenant isolation: the target must belong to the admin's own store.
+    const tenantId = (user.activeTenantId ?? null) as Id<"tenants"> | null;
+    if (!tenantId || staffUser.activeTenantId !== tenantId) {
+      throw new Error("Anëtari nuk i përket kompanisë tuaj.");
+    }
+
+    const newEmail = rawEmail?.trim().toLowerCase();
+    if (newEmail !== undefined && newEmail !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      throw new Error("Email-i i ri nuk është i vlefshëm.");
+    }
+    if (newPassword !== undefined && newPassword !== "" && newPassword.length < 8) {
+      throw new Error("Fjalëkalimi i ri duhet të ketë së paku 8 karaktere.");
+    }
+
+    const oldEmail = staffUser.email ?? null;
+
+    // 1. New password → proper provider-side hash via the auth component.
+    if (newPassword) {
+      const accountId = newEmail || oldEmail;
+      if (!accountId) throw new Error("Anëtari nuk ka email të konfiguruar.");
+      await ctx.runMutation("auth:store" as any, {
+        type: "modifyAccount",
+        provider: "password",
+        account: { id: accountId, secret: newPassword },
+      });
+    }
+
+    // 2. Email change → patch profile + move the password account key.
+    if (newEmail && newEmail !== oldEmail) {
+      if (oldEmail) await ctx.runMutation(api.staff.renameStaffAccount, { staffId, newEmail });
+    }
+
+    // 3. Any credential change kills the member's sessions — they sign in
+    //    again with the new credentials.
+    await invalidateSessions(ctx, { userId: staffId });
+
+    return { ok: true as const };
+  },
+});
+
+/**
+ * Email rename: updates the user profile and the Convex Auth account key in
+ * one mutation. Permission re-checked here (mutation ctx has db + auth) so
+ * it is safe as a public API.
+ */
+export const renameStaffAccount = mutation({
+  args: { staffId: v.id("users"), newEmail: v.string() },
+  handler: async (ctx, { staffId, newEmail }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user || !(await isAdminUser(user))) {
+      throw new Error("Vetëm admini i kompanisë mund të ndryshojë email-in.");
+    }
+    const tenantId = await resolveTenant(ctx, user);
+    const target = await ctx.db.get(staffId);
+    if (!target || !tenantId || target.activeTenantId !== tenantId) {
+      throw new Error("Anëtari nuk i përket kompanisë tuaj.");
+    }
+    const email = newEmail.trim().toLowerCase();
+    if (target.email) {
+      await renameAuthAccount(ctx, target.email, email);
+    }
+    await ctx.db.patch(staffId, { email });
+  },
+});
+
+/**
+ * "Heq Qasje" / "Rikthe Qasje" — toggle store access without deleting the
+ * account. Deactivation kills all active sessions immediately; login and
+ * data access are refused while `isActive === false`. Historical data is
+ * preserved.
+ */
+export const toggleStaffAccess = mutation({
+  args: { staffId: v.id("users"), isActive: v.boolean() },
+  handler: async (ctx, { staffId, isActive }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user || !(await isAdminUser(user))) {
+      throw new Error("Vetëm admini i kompanisë mund të ndryshojë qasjen.");
+    }
+    const tenantId = await resolveTenant(ctx, user);
+    const target = await ctx.db.get(staffId);
+    if (!target || !tenantId || target.activeTenantId !== tenantId) {
+      throw new Error("Anëtari nuk i përket kompanisë tuaj.");
+    }
+    await ctx.db.patch(staffId, { isActive });
+    if (!isActive) {
+      const sessions = await ctx.db
+        .query("authSessions")
+        .withIndex("userId", (q) => q.eq("userId", staffId))
+        .collect();
+      for (const s of sessions) {
+        await ctx.db.delete(s._id);
+      }
+    }
+  },
+});
+
+/**
+ * "Fshi" — permanently delete the staff member after tenant-scoped
+ * verification: auth account, sessions, refresh tokens, then the user doc.
+ */
+export const deleteStaff = mutation({
+  args: { staffId: v.id("users") },
+  handler: async (ctx, { staffId }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user || !(await isAdminUser(user))) {
+      throw new Error("Vetëm admini i kompanisë mund të fshijë staf.");
+    }
+    const tenantId = await resolveTenant(ctx, user);
+    const target = await ctx.db.get(staffId);
+    if (!target || !tenantId || target.activeTenantId !== tenantId) {
+      throw new Error("Anëtari nuk i përket kompanisë tuaj.");
+    }
+
+    // Auth account (password provider, keyed by email).
+    if (target.email) {
+      const account = await ctx.db
+        .query("authAccounts")
+        .withIndex("providerAndAccountId", (q) =>
+          q.eq("provider", "password").eq("providerAccountId", target.email!),
+        )
+        .unique();
+      if (account) await ctx.db.delete(account._id);
+    }
+
+    // Sessions + their refresh tokens.
+    const sessions = await ctx.db
+      .query("authSessions")
+      .withIndex("userId", (q) => q.eq("userId", staffId))
+      .collect();
+    for (const s of sessions) {
+      const tokens = await ctx.db
+        .query("authRefreshTokens")
+        .withIndex("sessionId", (q) => q.eq("sessionId", s._id))
+        .collect();
+      for (const t of tokens) await ctx.db.delete(t._id);
+      await ctx.db.delete(s._id);
+    }
+
+    await ctx.db.delete(staffId);
+    return { ok: true as const };
   },
 });
 

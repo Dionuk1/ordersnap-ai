@@ -15,6 +15,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -38,12 +39,29 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import {
+  KeyRound,
+  Loader2,
+  ShieldOff,
+  Trash2,
+  UserPlus,
+  Users,
+  UserX,
+} from "lucide-react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { KeyRound, Loader2, UserPlus, Users, UserX } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type StaffRole = "store_manager" | "order_agent";
+
+type StaffMember = {
+  _id: string;
+  name: string | null;
+  email: string | null;
+  role: StaffRole;
+  isActive?: boolean;
+  _creationTime: number;
+};
 
 const ROLE_LABELS: Record<StaffRole, string> = {
   store_manager: "Menaxher",
@@ -77,15 +95,15 @@ export default function Staff() {
     (m) => !(m as { isSuperAdmin?: boolean }).isSuperAdmin,
   );
   const createStaff = useAction(api.staff.createStaffMember);
-  const removeAccess = useAction(api.staff.removeStaffAccess);
+  const resetCredentials = useAction(api.staff.resetStaffCredentials);
+  const toggleAccess = useMutation(api.staff.toggleStaffAccess);
+  const deleteStaffMut = useMutation(api.staff.deleteStaff);
 
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<StaffMember | null>(null);
+  const [resetTarget, setResetTarget] = useState<StaffMember | null>(null);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,12 +125,33 @@ export default function Staff() {
     }
   };
 
+  const handleResetCredentials = async (
+    member: StaffMember,
+    email: string,
+    password: string,
+  ) => {
+    setBusy(true);
+    try {
+      await resetCredentials({
+        staffId: member._id as never,
+        newEmail: email || undefined,
+        newPassword: password || undefined,
+      });
+      toast.success(`Të dhënat e "${member.name ?? member.email}" u përditësuan.`);
+      setResetTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gabim gjatë rivendosjes së të dhënave.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleRemove = async () => {
     if (!confirmRemove) return;
     setBusy(true);
     try {
-      await removeAccess({ userId: confirmRemove.id as never });
-      toast.success(`Qasja e "${confirmRemove.name}" u hoq.`);
+      await deleteStaffMut({ staffId: confirmRemove._id as never });
+      toast.success(`"${confirmRemove.name}" u fshi përgjithmonë nga sistemi.`);
       setConfirmRemove(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Dështoi heqja.");
@@ -216,29 +255,60 @@ export default function Staff() {
                             {new Date(m._creationTime).toLocaleDateString("sq-AL")}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-1.5">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled
-                                title="Rivendosja e fjalëkalimit vjen së shpejti"
-                              >
-                                <KeyRound className="mr-1 size-3.5" />
-                                Rivendos
-                              </Button>
+                            <div className="flex justify-end gap-1">
+                              {/* 1. Rivendos — credentials reset modal */}
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-rose-600 hover:text-rose-700 dark:text-rose-400"
-                                onClick={() =>
-                                  setConfirmRemove({
-                                    id: m._id,
-                                    name: m.name ?? m.email ?? "Anëtari",
-                                  })
-                                }
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => setResetTarget(m)}
                               >
-                                <UserX className="mr-1 size-3.5" />
-                                Hiq Qasje
+                                <KeyRound className="size-3.5" />
+                                Rivendos
+                              </Button>
+                              {/* 2. Heq Qasje / Rikthe Qasje — toggle isActive */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                  "flex items-center gap-1 text-xs",
+                                  m.isActive === false
+                                    ? "text-amber-600 hover:text-amber-700 dark:text-amber-400"
+                                    : "text-rose-600 hover:text-rose-700 dark:text-rose-400",
+                                )}
+                                onClick={async () => {
+                                  const blocking = m.isActive !== false;
+                                  try {
+                                    await toggleAccess({
+                                      staffId: m._id as never,
+                                      isActive: !blocking,
+                                    });
+                                    toast.success(
+                                      blocking
+                                        ? `Qasja e "${m.name ?? m.email}" u bllokua.`
+                                        : `Qasja e "${m.name ?? m.email}" u rikthye.`,
+                                    );
+                                  } catch (err) {
+                                    toast.error(err instanceof Error ? err.message : "Dështoi.");
+                                  }
+                                }}
+                              >
+                                {m.isActive === false ? (
+                                  <ShieldOff className="size-3.5" />
+                                ) : (
+                                  <UserX className="size-3.5" />
+                                )}
+                                {m.isActive === false ? "Rikthe Qasje" : "Heq Qasje"}
+                              </Button>
+                              {/* 3. Fshi — permanent delete with confirmation */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="flex items-center gap-1 text-xs text-red-500 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400"
+                                onClick={() => setConfirmRemove(m)}
+                              >
+                                <Trash2 className="size-3.5" />
+                                Fshi
                               </Button>
                             </div>
                           </TableCell>
@@ -323,17 +393,17 @@ export default function Staff() {
           </DialogContent>
         </Dialog>
 
-        {/* Remove access confirmation */}
+        {/* Fshi — permanent delete confirmation */}
         <Dialog
           open={confirmRemove !== null}
           onOpenChange={(open) => !open && setConfirmRemove(null)}
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Hiq Qasjen — {confirmRemove?.name}</DialogTitle>
+              <DialogTitle>Fshi Përgjithmonë — {confirmRemove?.name}</DialogTitle>
               <DialogDescription>
-                Anëtari do të shkëputet nga kompania dhe do të detyrohet të
-                dalë nga llogaria. Llogaria nuk fshihet përfundimisht.
+                Anëtari do të FSHIHET PËRGJITHMONË nga sistemi, bashkë me
+                llogarinë e tij të hyrjes. Kjo veprim nuk mund të zhbëhet.
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2">
@@ -346,12 +416,114 @@ export default function Staff() {
                 disabled={busy}
               >
                 {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Hiq Qasjen
+                Fshi Përgjithmonë
               </Button>
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Rivendos — credentials reset modal */}
+        <ResetStaffModal
+          staffMember={resetTarget}
+          isOpen={resetTarget !== null}
+          onClose={() => setResetTarget(null)}
+          onReset={handleResetCredentials}
+          busy={busy}
+        />
       </RequireAdmin>
     </AppShell>
+  );
+}
+
+/**
+ * "Rivendos" modal — update a staff member's email and/or set a new
+ * password directly. Calls the Convex Auth-aware resetStaffCredentials
+ * action (proper provider-side secret hashing + session invalidation).
+ */
+function ResetStaffModal({
+  staffMember,
+  isOpen,
+  onClose,
+  onReset,
+  busy,
+}: {
+  staffMember: StaffMember | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onReset: (member: StaffMember, email: string, password: string) => Promise<void>;
+  busy: boolean;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  // Re-seed the fields each time a different member is selected.
+  const seededFor = staffMember?._id;
+  useEffect(() => {
+    if (staffMember) {
+      setEmail(staffMember.email ?? "");
+      setPassword("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seededFor]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffMember) return;
+    await onReset(staffMember, email.trim(), password);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Rivendos Të Dhënat e Stafit</DialogTitle>
+          <DialogDescription>
+            Përditësoni email-in ose vendosni një fjalëkalim të ri për{" "}
+            <span className="font-medium text-foreground">
+              {staffMember?.name || staffMember?.email || "—"}
+            </span>
+            . Sesionet aktive do të mbyllen pas ruajtjes.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="reset-email">Email i Ri</Label>
+            <Input
+              id="reset-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="reset-password">Fjalëkalimi i Ri</Label>
+            <Input
+              id="reset-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Lëreni zbrazët nëse nuk dëshironi ta ndryshoni"
+              minLength={8}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Anulo
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Po ruhet...
+                </>
+              ) : (
+                "Ruaj Ndryshimet"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

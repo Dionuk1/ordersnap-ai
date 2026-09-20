@@ -43,6 +43,9 @@ const schema = defineSchema(
       role: v.optional(roleValidator),
       activeTenantId: v.optional(v.id("tenants")),
       isSuperAdmin: v.optional(v.boolean()),
+      // Store-admin controlled access switch: false = blocked from the app
+      // (sessions killed, data access denied) without deleting the account.
+      isActive: v.optional(v.boolean()),
     }).index("email", ["email"]),
 
     // Multi-tenant workspaces resolved via /login?tenant={slug}
