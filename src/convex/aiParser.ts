@@ -3,9 +3,11 @@ import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { getCurrentUserSafe } from "./authHelpers";
 
-const PARSER_PROMPT = `You are an order data extraction engine for an Albanian e-commerce order management system focused on Kosovo.
-The user uploads a screenshot of a chat conversation (Instagram DM, WhatsApp, Facebook Messenger) between a customer and a seller.
-Extract the customer's ORDER information from the conversation and return a JSON object with EXACTLY these 8 keys and nothing else:
+const PARSER_PROMPT = `You are a precise data extraction engine for chat screenshots (Instagram, WhatsApp, Messenger, Viber) for an Albanian e-commerce order management system focused on Kosovo.
+The user uploads a screenshot of a chat conversation between a customer and a seller.
+Analyze the screenshot carefully and extract the customer's ORDER details into the required JSON format following these rules:
+
+Return a JSON object with EXACTLY these 10 keys and nothing else:
 
 {
   "first_name": "string — the customer's real human FIRST name only (e.g. \"Mafir\"). Never include the surname, usernames, or brand names here.",
@@ -15,8 +17,19 @@ Extract the customer's ORDER information from the conversation and return a JSON
   "address": "string — street name and building details ONLY (e.g. \"Rruga Bajram Beg\" or \"Rruga Agim Ramadani Nr. 12\"). Do NOT include the city here.",
   "address_details": "string — floor, apartment number, entrance, or extra landmarks (e.g. \"Kati 3, Apartamenti 12\"). Empty string if not stated.",
   "product_description": "string — the product name and details: item, size, color, quantity (e.g. \"Kamizolë e zezë, madhësia M\").",
+  "quantity": "number — the numeric quantity ordered (e.g. 2). Default to 1 if not specified.",
+  "notes": "string — extra details, delivery instructions or preferences from the customer (e.g. 'Dërgesa pas ores 18:00'). Empty string if none.",
   "price": "number — the item price WITHOUT currency symbols (e.g. 25 or 25.50). If the amount is stated in Lek, convert using 1 EUR = 100 Lek (2500 Lek -> 25). If the chat shows a separate shipping fee, do NOT add it to this price; the shipping fee is not part of the item price."
 }
+
+Field rules:
+1. customer name fields: Extract ONLY the recipient's real human name. Do NOT mix this with address or phone number.
+2. phone: Extract ONLY valid phone numbers (e.g. +38349123456, 044123456, +35569123456, +38970123456). Clean out stray spaces or text.
+3. city: Extract ONLY the city/town name (e.g. Prishtinë, Pejë, Gjakovë, Ferizaj, Gjilan, Mitrovicë, Prizren, Tiranë, Durrës, Shkup, etj.) — never the street.
+4. address: Extract ONLY street name, neighborhood, building/apartment numbers, or landmarks — never the city.
+5. quantity: numeric quantity, default 1.
+6. price: ONLY the total price numeric value, no currency symbols.
+7. notes: extra details (delivery instructions or preferences).
 
 Rules:
 - Extract REAL HUMAN NAMES only. Instagram handles, brand names, and seller names must NOT be treated as first_name/last_name.
@@ -26,7 +39,8 @@ Rules:
 - PHONE must be a clean 9-digit local Kosovo number starting with 04 (e.g. "044123245") or the international "+383…" form. Strip all spaces, dashes and parentheses.
 - Kosovo comes first. If the screenshot mentions both Kosovo and another country, prefer the Kosovo interpretation.
 - Prioritize Kosovo phone patterns: 044, 045, 049, 043, 048, 046, 047 and international +383.
-- If a field is not present in the conversation, use an empty string for strings and 0 for numbers.
+- Do NOT hallucinate. Do NOT put address text into the name fields, or vice versa.
+- If a field is not present in the conversation, use an empty string for strings, 1 for quantity and 0 for price.
 - "price" must be a plain number, never a string, no currency symbols.
 - Return ONLY the JSON object, no markdown fences, no explanations.
 
@@ -53,6 +67,8 @@ const RESPONSE_SCHEMA = {
     address: { type: "STRING" },
     address_details: { type: "STRING" },
     product_description: { type: "STRING" },
+    quantity: { type: "NUMBER" },
+    notes: { type: "STRING" },
     price: { type: "NUMBER" },
   },
   required: [
@@ -63,6 +79,8 @@ const RESPONSE_SCHEMA = {
     "address",
     "address_details",
     "product_description",
+    "quantity",
+    "notes",
     "price",
   ],
   propertyOrdering: [
@@ -73,6 +91,8 @@ const RESPONSE_SCHEMA = {
     "address",
     "address_details",
     "product_description",
+    "quantity",
+    "notes",
     "price",
   ],
 } as const;
@@ -85,6 +105,8 @@ interface ParsedOrder {
   address: string;
   address_details: string;
   product_description: string;
+  quantity: number;
+  notes: string;
   price: number;
 }
 
@@ -185,7 +207,11 @@ function scrubStreetKeywords(name: string): string {
   return name;
 }
 
-/** Normalize a phone to a clean 9-digit Kosovo local format (04…). */
+/**
+ * Normalize a phone to a clean dialable form.
+ * Kosovo (+383/0…) → local 04…; Albania (+355) and North Macedonia (+389)
+ * keep their international form so nothing is silently mangled.
+ */
 function normalizePhone(raw: string): string {
   let digits = raw.replace(/[^\d+]/g, "");
   if (digits.startsWith("+383")) {
@@ -193,6 +219,7 @@ function normalizePhone(raw: string): string {
   } else if (digits.startsWith("383")) {
     digits = "0" + digits.slice(3);
   }
+  // Any other international number (+355…, +389…) stays as-is.
   return digits;
 }
 
@@ -206,6 +233,8 @@ function sanitizeParsedOrder(obj: Record<string, unknown>): ParsedOrder {
     address: String(obj.address ?? "").trim(),
     address_details: String(obj.address_details ?? "").trim(),
     product_description: String(obj.product_description ?? "").trim(),
+    quantity: Math.max(1, Number(obj.quantity ?? 1) || 1),
+    notes: String(obj.notes ?? "").trim(),
     price: Number(obj.price ?? 0) || 0,
   };
 }
@@ -307,6 +336,8 @@ export const parseWithGemini = action({
         address: parsed.address,
         address_details: parsed.address_details,
         product_description: parsed.product_description,
+        quantity: parsed.quantity,
+        notes: parsed.notes,
         price: parsed.price,
       },
     };

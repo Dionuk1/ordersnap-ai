@@ -147,6 +147,8 @@ function NewOrderInner() {
               address: p.address || "",
               addressDetails: p.address_details || "",
               productDescription: p.product_description || "",
+              quantity: p.quantity ?? 1,
+              notes: p.notes || "",
               productPrice: p.price ?? 0,
               totalAmount: (p.price ?? 0) + (f.postalFee || 0),
             }));

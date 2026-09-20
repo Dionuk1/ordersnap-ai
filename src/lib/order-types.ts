@@ -13,6 +13,10 @@ export interface ParsedOrder {
   totalAmount: number;
   deliveryOpen: boolean;
   deliveryExchange: boolean;
+  /** AI-extracted numeric quantity (default 1). Parsed form state only. */
+  quantity?: number;
+  /** AI-extracted customer notes / delivery instructions. Form state only. */
+  notes?: string;
 }
 
 // ------------------- Kosovo-first defaults -------------------
