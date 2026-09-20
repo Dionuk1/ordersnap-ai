@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import logo from "@/assets/logo.svg";
+import { Footer } from "@/components/Footer";
 import { LiquidToggle } from "@/components/ui/LiquidToggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,7 +73,7 @@ export default function Landing() {
       {/* Nav */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         {/* 3-part grid: brand | centered CTA | actions */}
-        <div className="mx-auto grid h-16 max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           {/* Left: Brand / Logo */}
           <div className="flex items-center gap-2.5">
             <img src={logo} alt="OrderSnap AI" className="size-9 rounded-lg" />
@@ -86,22 +87,9 @@ export default function Landing() {
             </div>
           </div>
 
-          {/* Center: Main CTA — dead-center, redirects to /login */}
-          <div className="flex justify-center">
-            <Button asChild className="shadow-sm transition-all">
-              <Link to="/login">
-                Fillo tani
-                <ArrowRight className="ml-1 size-4" />
-              </Link>
-            </Button>
-          </div>
-
-          {/* Right: Theme Toggle + Regjistrohu */}
-          <div className="flex items-center justify-end gap-3">
+        {/* Right: Theme toggle only */}
+          <div className="flex items-center">
             <LiquidToggle speed={87} stretch={36} />
-            <Button variant="outline" asChild className="transition-all">
-              <Link to="/register">Regjistrohu</Link>
-            </Button>
           </div>
         </div>
       </header>
@@ -137,8 +125,8 @@ export default function Landing() {
                 <ArrowRight className="ml-2 size-4" />
               </Link>
             </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link to="/login?tab=register">Krijo llogari</Link>
+            <Button size="lg" variant="outline" asChild className="border-primary/20 hover:bg-accent transition-all">
+              <Link to="/register">Krijo llogari</Link>
             </Button>
           </div>
 
@@ -245,15 +233,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <footer className="border-t py-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-muted-foreground sm:flex-row sm:px-6">
-          <div className="flex items-center gap-2">
-            <img src={logo} alt="" className="size-6 rounded-md" />
-            <span className="font-medium text-foreground">OrderSnap AI</span>
-          </div>
-          <span>Sistemi i Menaxhimit të Porosive dhe Automatizimit me AI</span>
-        </div>
-      </footer>
+      <Footer />
     </motion.div>
   );
 }
