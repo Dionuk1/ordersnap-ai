@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
-import { createAccount, invalidateSessions } from "@convex-dev/auth/server";
+import { createAccount, invalidateSessions, modifyAccountCredentials } from "@convex-dev/auth/server";
 import { getCurrentUser, isAdminUser } from "./users";
 import { api } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -278,12 +278,11 @@ export const resetStaffCredentials = action({
 
     const oldEmail = staffUser.email ?? null;
 
-    // 1. New password → proper provider-side hash via the auth component.
+    // 1. New password → proper provider-side hash via Convex Auth.
     if (newPassword) {
       const accountId = newEmail || oldEmail;
       if (!accountId) throw new Error("Anëtari nuk ka email të konfiguruar.");
-      await ctx.runMutation("auth:store" as any, {
-        type: "modifyAccount",
+      await modifyAccountCredentials(ctx, {
         provider: "password",
         account: { id: accountId, secret: newPassword },
       });
