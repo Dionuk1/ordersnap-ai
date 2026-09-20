@@ -85,9 +85,6 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-2">
             <LiquidToggle speed={87} stretch={36} />
-            <Button variant="ghost" asChild>
-              <Link to="/login">Kyçuni</Link>
-            </Button>
             <Button asChild>
               <Link to="/login">
                 Fillo tani
