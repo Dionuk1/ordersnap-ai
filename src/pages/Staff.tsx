@@ -69,7 +69,13 @@ export default function Staff() {
   const rawStaff = useQuery(api.staff.listStaff, {});
   // Defensive fallback: an undefined/erroring subscription must never crash
   // the component tree — render the empty state instead.
-  const staff = rawStaff ?? [];
+  //
+  // Extra safety filter: super-admin platform accounts must never render in
+  // a tenant staff table, even if a stale backend response ever carried one
+  // (e.g. cached subscription from before the server-side exclusion).
+  const staff = (rawStaff ?? []).filter(
+    (m) => !(m as { isSuperAdmin?: boolean }).isSuperAdmin,
+  );
   const createStaff = useAction(api.staff.createStaffMember);
   const removeAccess = useAction(api.staff.removeStaffAccess);
 

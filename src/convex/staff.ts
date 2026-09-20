@@ -47,6 +47,10 @@ export const listStaff = query({
         .filter((u) => {
           if (u.isAnonymous) return false;
           if (u._id === user._id) return false;
+          // Super-admins manage the SaaS platform centrally — they are NEVER
+          // tenant staff, even when their session is tenant-bound
+          // (e.g. after impersonation). They appear only in /admin.
+          if (u.isSuperAdmin) return false;
           if (tenantId) return u.activeTenantId === tenantId;
           // No tenant bound yet: fall back to email-listed membership.
           return false;
