@@ -1,4 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
+import { api } from "@/convex/_generated/api";
+import { useMutation } from "convex/react";
+import { useEffect, useRef } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -14,6 +17,18 @@ import type { ReactNode } from "react";
  */
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
+  const ensureRole = useMutation(api.users.ensureStoreOwnerRole);
+  const promoted = useRef(false);
+
+  // Self-healing: registered users without an explicit role get promoted to
+  // "owner" server-side (matches the server's authorization semantics — a
+  // role-less account IS a store owner).
+  useEffect(() => {
+    if (!isLoading && user && !user.isAnonymous && !user.role && !promoted.current) {
+      promoted.current = true;
+      void ensureRole({}).catch(() => undefined);
+    }
+  }, [isLoading, user, ensureRole]);
 
   // Debug breadcrumb for blank-screen diagnosis.
   console.log(
@@ -23,7 +38,16 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
     isLoading,
   );
 
-  const showWarning = !isLoading && user != null && user.role !== "admin" && user.role !== "owner";
+  // Mirrors the server's isAdminUser(): role-less accounts are store owners;
+  // only explicit "member"/"user" roles are restricted.
+  const isStoreAdmin =
+    user != null &&
+    !user.isAnonymous &&
+    (user.role === undefined ||
+      user.role === null ||
+      user.role === "admin" ||
+      user.role === "owner");
+  const showWarning = !isLoading && user != null && !user.isAnonymous && !isStoreAdmin;
 
   return (
     <div className="flex flex-col gap-4">
