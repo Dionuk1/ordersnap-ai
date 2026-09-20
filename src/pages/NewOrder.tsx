@@ -78,7 +78,13 @@ function NewOrderInner() {
     }
   }, [form.country]);
 
-  const autoTotal = form.productPrice + (form.postalFee || 0);
+  // Real-time total — always numeric. form fields may transiently hold raw
+  // input strings while typing; Number() coercion guarantees the sum is a
+  // number (never "2" + 3 = "23"), so the display can never stick at €0.00
+  // or NaN.
+  const priceNum = Number(form.productPrice) || 0;
+  const feeNum = Number(form.postalFee) || 0;
+  const autoTotal = priceNum + feeNum;
 
   // Auto-prefill the postal fee when the country changes (only while the fee
   // is still at its previous country default — never overwrite manual edits).
@@ -92,17 +98,35 @@ function NewOrderInner() {
     // resolve the display country through the shared mapping.
     const rates = publicSettings.shippingRates;
     const prev = lastCountryRef.current;
-    if (prev === form.country) return;
+    if (prev === form.country) {
+      // Same country (e.g. store settings just loaded, or the AI detected
+      // the default country): fill ONLY an empty fee with the configured
+      // rate — never overwrite a manual edit or a non-zero value.
+      if (!feeNum) {
+        const rate = rates[shippingRateField(form.country)] ?? 0;
+        if (rate) {
+          setForm((f) => ({
+            ...f,
+            postalFee: rate,
+            totalAmount: (Number(f.productPrice) || 0) + rate,
+          }));
+        }
+      }
+      return;
+    }
     const prevRate = rates[shippingRateField(prev)];
-    if (form.postalFee === prevRate || !form.postalFee) {
+    if (feeNum === prevRate || !feeNum) {
+      // The fee still equals the previous country's default (or is empty)
+      // → it wasn't manually customized; swap in the new country's rate.
       const newRate = rates[shippingRateField(form.country)] ?? 0;
       setForm((f) => ({
         ...f,
         country: form.country,
         postalFee: newRate,
-        totalAmount: f.productPrice + newRate,
+        totalAmount: (Number(f.productPrice) || 0) + newRate,
       }));
     } else {
+      // Manually customized fee: keep the user's value, just track country.
       setForm((f) => ({ ...f, country: form.country }));
     }
     lastCountryRef.current = form.country;
@@ -266,8 +290,12 @@ function NewOrderInner() {
     setForm((f) => {
       const next = { ...f, [key]: val };
       if (key === "productPrice" || key === "postalFee") {
-        const pp = key === "productPrice" ? Number(val) || 0 : f.productPrice;
-        const pf = key === "postalFee" ? Number(val) || 0 : (f.postalFee || 0);
+        // Numeric fields store coerced numbers so the total is always a
+        // real number — raw strings would make "2" + 3 = "23".
+        const pp = key === "productPrice" ? Number(val) || 0 : (Number(f.productPrice) || 0);
+        const pf = key === "postalFee" ? Number(val) || 0 : (Number(f.postalFee) || 0);
+        next.productPrice = pp;
+        next.postalFee = pf;
         next.totalAmount = pp + pf;
       }
       return next;
